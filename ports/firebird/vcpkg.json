@@ -1,0 +1,22 @@
+{
+  "name": "firebird",
+  "version-semver": "5.0.3",
+  "description": "Firebird SQL DBMS client library",
+  "homepage": "https://firebirdsql.org/",
+  "license": "LicenseRef-IDPL OR LicenseRef-IPL",
+  "supports": "(windows & !uwp) | linux | osx",
+  "dependencies": [
+    {
+      "name": "icu",
+      "default-features": false
+    },
+    {
+      "name": "ncurses",
+      "platform": "!windows"
+    },
+    {
+      "name": "zlib",
+      "platform": "linux"
+    }
+  ]
+}
