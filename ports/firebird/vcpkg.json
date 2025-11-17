@@ -13,11 +13,21 @@
     },
     {
       "name": "libtomcrypt",
-      "platform": "!windows"
+      "host": true,
+      "platform": "!windows & static"
+    },
+    {
+      "name": "libtomcrypt",
+      "platform": "!windows & !static"
     },
     {
       "name": "libtommath",
-      "platform": "!windows"
+      "host": true,
+      "platform": "!windows & static"
+    },
+    {
+      "name": "libtommath",
+      "platform": "!windows & !static"
     },
     {
       "name": "ncurses",

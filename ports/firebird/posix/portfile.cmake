@@ -1,4 +1,4 @@
-# In Linux, we adjust rpaths to be more precise than what vcpkg does by default.
+	# In Linux, we adjust rpaths to be more precise than what vcpkg does by default.
 set(VCPKG_FIXUP_ELF_RPATH OFF)
 #set(VCPKG_FIXUP_MACHO_RPATH OFF)
 
@@ -14,9 +14,12 @@ endif()
 set(FIREBIRD_CONFIGURE_OPTIONS
     --enable-client-only
     --enable-binreloc
-    --with-plugins=plugins/${PORT}
+    --with-fbplugins=plugins/${PORT}
     --with-fbmsg=share/${PORT}
-    --with-tzdata=share/${PORT}/tzdata
+    --with-fbtzdata=share/${PORT}/tzdata
+    "CPPFLAGS=-I${CURRENT_HOST_INSTALLED_DIR}/include"
+    "CXXFLAGS=-I${CURRENT_HOST_INSTALLED_DIR}/include"
+    "LDFLAGS=-L${CURRENT_HOST_INSTALLED_DIR}/lib"
 )
 
 vcpkg_configure_make(
