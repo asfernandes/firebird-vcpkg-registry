@@ -14,8 +14,6 @@ endif()
 set(FIREBIRD_CONFIGURE_OPTIONS
     --enable-client-only
     --enable-binreloc
-    --with-builtin-tomcrypt
-    --with-builtin-tommath
     --with-plugins=plugins/${PORT}
     --with-fbmsg=share/${PORT}
     --with-tzdata=share/${PORT}/tzdata
@@ -45,10 +43,6 @@ file(
 
 file(GLOB FIREBIRD_RELEASE_LIBS
     "${SOURCE_COPY_REL_PATH}/gen/Release/firebird/lib/libfbclient*"
-    "${SOURCE_COPY_REL_PATH}/extern/libtomcrypt/.libs/libtomcrypt*.so*"
-    "${SOURCE_COPY_REL_PATH}/extern/libtomcrypt/.libs/libtomcrypt*.dylib*"
-    "${SOURCE_COPY_REL_PATH}/extern/libtommath/.libs/libtommath*.so*"
-    "${SOURCE_COPY_REL_PATH}/extern/libtommath/.libs/libtommath*.dylib*"
 )
 
 file(
@@ -92,10 +86,6 @@ set(SOURCE_COPY_DBG_PATH "${CURRENT_BUILDTREES_DIR}/${TARGET_TRIPLET}-dbg")
 
 file(GLOB FIREBIRD_DEBUG_LIBS
     "${SOURCE_COPY_DBG_PATH}/gen/Debug/firebird/lib/libfbclient*"
-    "${SOURCE_COPY_DBG_PATH}/extern/libtomcrypt/.libs/libtomcrypt*.so*"
-    "${SOURCE_COPY_DBG_PATH}/extern/libtomcrypt/.libs/libtomcrypt*.dylib*"
-    "${SOURCE_COPY_DBG_PATH}/extern/libtommath/.libs/libtommath*.so*"
-    "${SOURCE_COPY_DBG_PATH}/extern/libtommath/.libs/libtommath*.dylib*"
 )
 
 file(

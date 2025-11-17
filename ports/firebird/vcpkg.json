@@ -8,14 +8,25 @@
   "dependencies": [
     {
       "name": "icu",
+      "host": true,
       "default-features": false
     },
     {
+      "name": "libtomcrypt",
+      "platform": "!windows"
+    },
+    {
+      "name": "libtommath",
+      "platform": "!windows"
+    },
+    {
       "name": "ncurses",
+      "host": true,
       "platform": "!windows"
     },
     {
       "name": "zlib",
+      "host": true,
       "platform": "linux"
     }
   ]
