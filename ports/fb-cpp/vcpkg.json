@@ -1,0 +1,37 @@
+{
+  "name": "fb-cpp",
+  "version-semver": "0.0.1",
+  "description": "A modern C++ wrapper for the Firebird database API",
+  "homepage": "https://github.com/asfernandes/fb-cpp",
+  "license": "MIT",
+  "supports": "(windows & !uwp) | linux | osx",
+  "dependencies": [
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    },
+    {
+      "name": "vcpkg-cmake-config",
+      "host": true
+    },
+    "firebird"
+  ],
+  "default-features": [
+    "boost-dll",
+    "boost-multiprecision"
+  ],
+  "features": {
+    "boost-dll": {
+      "description": "Enable Boost.DLL support for runtime dynamic loading of Firebird client library",
+      "dependencies": [
+        "boost-dll"
+      ]
+    },
+    "boost-multiprecision": {
+      "description": "Enable Boost.Multiprecision support for INT128 and DECFLOAT types",
+      "dependencies": [
+        "boost-multiprecision"
+      ]
+    }
+  }
+}

@@ -1,0 +1,27 @@
+_find_package(${ARGS})
+
+set(_fb_cpp_targets_to_update "")
+foreach(_fb_cpp_candidate fb-cpp::fb-cpp fb-cpp)
+    if(TARGET "${_fb_cpp_candidate}")
+        get_target_property(_fb_cpp_alias "${_fb_cpp_candidate}" ALIASED_TARGET)
+        if(_fb_cpp_alias)
+            list(APPEND _fb_cpp_targets_to_update "${_fb_cpp_alias}")
+        else()
+            list(APPEND _fb_cpp_targets_to_update "${_fb_cpp_candidate}")
+        endif()
+    endif()
+endforeach()
+
+if(_fb_cpp_targets_to_update)
+    list(REMOVE_DUPLICATES _fb_cpp_targets_to_update)
+    foreach(_fb_cpp_target IN LISTS _fb_cpp_targets_to_update)
+        target_compile_definitions("${_fb_cpp_target}" INTERFACE
+            FB_CPP_USE_BOOST_DLL=@FB_CPP_USE_BOOST_DLL_VALUE@
+            FB_CPP_USE_BOOST_MULTIPRECISION=@FB_CPP_USE_BOOST_MULTIPRECISION_VALUE@
+        )
+    endforeach()
+endif()
+
+unset(_fb_cpp_targets_to_update)
+unset(_fb_cpp_target)
+unset(_fb_cpp_alias)
