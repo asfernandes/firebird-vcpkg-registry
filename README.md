@@ -33,7 +33,7 @@ third-party Firebird-related libraries so they can be consumed alongside the off
      ]
    }
    ```
-   alternatively, this project can be used as an overlay declared in `vcpkg-configuration.json`:
+   Alternatively, this project can be used as an overlay declared in `vcpkg-configuration.json`:
    ```json
    {
 	 "overlay-ports": [
