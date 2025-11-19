@@ -28,12 +28,20 @@ third-party Firebird-related libraries so they can be consumed alongside the off
          "kind": "git",
          "repository": "https://github.com/asfernandes/firebird-vcpkg-registry.git",
          "baseline": "<baseline>",
-         "packages": [ "firebird" ]
+         "packages": [ "firebird", "fb-cpp" ]
        }
      ]
    }
    ```
-3. Install the Firebird client library through vcpkg as usual:
+   alternatively, this project can be used as an overlay declared in `vcpkg-configuration.json`:
+   ```json
+   {
+	 "overlay-ports": [
+	   "<registry-path>/ports"
+	 ]
+   }
+   ```
+3. Install the packages through vcpkg as usual:
    ```bash
    ./vcpkg install firebird
    ```
@@ -67,4 +75,10 @@ endif()
 
 Point your `cmake`/`vcpkg` invocation to the custom triplet so the build picks up the overrides.
 
-A more complete example of this configuration lives in the [fb-cpp](https://github.com/asfernandes/fb-cpp) repository.
+A more complete example of this configuration can be  found in the [fb-cpp](https://github.com/asfernandes/fb-cpp)
+repository.
+
+
+## Ports available
+- `firebird`: The Firebird client library ([example](examples/firebird))
+- `fb-cpp`: A modern C++ wrapper for the Firebird database API ([example](examples/fb-cpp))
