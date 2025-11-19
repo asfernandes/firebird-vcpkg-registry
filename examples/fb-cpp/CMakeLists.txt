@@ -12,7 +12,6 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-find_package(firebird CONFIG REQUIRED)
 find_package(fb-cpp CONFIG REQUIRED)
 
 add_executable(${PROJECT_NAME}
@@ -20,6 +19,5 @@ add_executable(${PROJECT_NAME}
 )
 
 target_link_libraries(${PROJECT_NAME}
-    PRIVATE firebird
     PRIVATE fb-cpp::fb-cpp
 )
