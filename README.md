@@ -43,7 +43,7 @@ third-party Firebird-related libraries so they can be consumed alongside the off
    ```
 3. Install the packages through vcpkg as usual:
    ```bash
-   ./vcpkg install firebird
+   vcpkg install firebird
    ```
    (or use vcpkg manifest mode)
 
