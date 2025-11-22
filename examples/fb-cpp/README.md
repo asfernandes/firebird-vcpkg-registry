@@ -15,3 +15,11 @@ cmake --build build
 ```
 
 The resulting executable is written to `build/fb-cpp-example`.
+
+## Install with bundled dependencies
+
+Use `cmake --install` to stage the example plus its runtime requirements from vcpkg into a prefix of your choice:
+
+```bash
+cmake --install build --prefix /tmp/fb-cpp-install [--config Release]
+```

@@ -8,9 +8,30 @@ set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CAC
 
 project(fb-cpp-example LANGUAGES CXX)
 
+include(GNUInstallDirs)
+
+if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "RelWithDebInfo" "MinSizeRel")
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+set(CMAKE_BUILD_RPATH_USE_ORIGIN ON)
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
+if(APPLE)
+    list(APPEND CMAKE_INSTALL_RPATH
+        "@loader_path"
+        "@loader_path/../$<IF:$<CONFIG:Debug>,debug/,>${CMAKE_INSTALL_LIBDIR}"
+    )
+else()
+    list(APPEND CMAKE_INSTALL_RPATH
+        "$ORIGIN"
+        "$ORIGIN/../$<IF:$<CONFIG:Debug>,debug/,>${CMAKE_INSTALL_LIBDIR}"
+    )
+endif()
 
 find_package(fb-cpp CONFIG REQUIRED)
 
@@ -21,3 +42,5 @@ add_executable(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME}
     PRIVATE fb-cpp::fb-cpp
 )
+
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/install-rules.cmake")
