@@ -78,7 +78,14 @@ Point your `cmake`/`vcpkg` invocation to the custom triplet so the build picks u
 A more complete example of this configuration can be  found in the [fb-cpp](https://github.com/asfernandes/fb-cpp)
 repository.
 
-
 ## Ports available
 - `firebird`: The Firebird client library ([example](examples/firebird))
 - `fb-cpp`: A modern C++ wrapper for the Firebird database API ([example](examples/fb-cpp))
+
+
+# Updating ports
+
+To update all port versions after making changes to the portfiles, run the following command:
+```
+vcpkg --x-builtin-ports-root=./ports --x-builtin-registry-versions-dir=./versions x-add-version --all --verbose
+```
