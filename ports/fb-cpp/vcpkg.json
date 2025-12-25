@@ -1,11 +1,12 @@
 {
   "name": "fb-cpp",
-  "version-semver": "0.0.1",
+  "version-semver": "0.0.2",
   "description": "A modern C++ wrapper for the Firebird database API",
   "homepage": "https://github.com/asfernandes/fb-cpp",
   "license": "MIT",
   "supports": "(windows & !uwp) | linux | osx",
   "dependencies": [
+    "firebird",
     {
       "name": "vcpkg-cmake",
       "host": true
@@ -13,8 +14,7 @@
     {
       "name": "vcpkg-cmake-config",
       "host": true
-    },
-    "firebird"
+    }
   ],
   "default-features": [
     "boost-dll",
