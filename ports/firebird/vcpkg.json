@@ -1,6 +1,7 @@
 {
   "name": "firebird",
   "version-semver": "5.0.3",
+  "port-version": 1,
   "description": "Firebird SQL DBMS client library",
   "homepage": "https://firebirdsql.org/",
   "license": "LicenseRef-IDPL OR LicenseRef-IPL",
