@@ -1,3 +1,6 @@
+vcpkg_acquire_msys(MSYS_ROOT PACKAGES unzip)
+vcpkg_add_to_path(${MSYS_ROOT}/usr/bin)
+
 if(VCPKG_TARGET_ARCHITECTURE STREQUAL "x86")
     set(FB_ARCH_OUT "Win32")
     set(FB_PROCESSOR_ARCHITECTURE "x86")
