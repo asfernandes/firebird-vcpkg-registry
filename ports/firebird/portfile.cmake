@@ -3,14 +3,12 @@ set(VCPKG_POLICY_ALLOW_DEBUG_SHARE enabled)
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO FirebirdSQL/firebird
-    REF v5.0.3
-    SHA512 73bbc54342cff68adad66c3b7b9a22b4392ee390b745bda76b03f71a681a6a04337f3f904f2ed4504665bd1a037d68351124fa7c20bed07e22304f14dd54e69f
+    REF v5.0.4
+    SHA512 470e371733817b20d84a4dc45a23ca54fb82e150efbec17b3cd3e71d1867023c30dd0aaa83c807f4e03cf0403cd47eeb0b7df2a09a3be897a0f6dddc0bbeeb6a
     HEAD_REF master
     PATCHES
         windows-paths.diff
         windows-timeout.patch
-        osx-corrections-1.patch
-        osx-corrections-2.patch
         osx-icu-rpath.patch
         osx-unvcpkg.patch
 )

@@ -5,8 +5,8 @@
       "port-version": 0
     },
     "firebird": {
-      "baseline": "5.0.3",
-      "port-version": 2
+      "baseline": "5.0.4",
+      "port-version": 0
     }
   }
 }
