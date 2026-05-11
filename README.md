@@ -19,8 +19,7 @@ third-party Firebird-related libraries so they can be consumed alongside the off
    ```json
    {
      "default-registry": {
-       "kind": "git",
-       "repository": "https://github.com/microsoft/vcpkg",
+       "kind": "builtin",
        "baseline": "<official-vcpkg-baseline>"
      },
      "registries": [
