@@ -1,0 +1,55 @@
+From bf83aa214a520c7700ed8cfa6d6ddf710ba8913c Mon Sep 17 00:00:00 2001
+From: Adriano dos Santos Fernandes <adrianosf@gmail.com>
+Date: Thu, 18 Jun 2026 07:36:57 -0300
+Subject: [PATCH] Adjust build script for Visual Studio 2026
+
+---
+ builds/win32/setenvvar.bat | 22 +++++++++++++++-------
+ 1 file changed, 15 insertions(+), 7 deletions(-)
+
+diff --git a/builds/win32/setenvvar.bat b/builds/win32/setenvvar.bat
+index 332f67ad1b..6e78fd0c17 100644
+--- a/builds/win32/setenvvar.bat
++++ b/builds/win32/setenvvar.bat
+@@ -46,16 +46,20 @@ for %%v in ( %* )  do (
+ ::
+ 
+ @if not DEFINED FB_VSCOMNTOOLS (
+-  if DEFINED VS170COMNTOOLS (
+-    set "FB_VSCOMNTOOLS=%VS170COMNTOOLS%"
++  if DEFINED VS180COMNTOOLS (
++    set "FB_VSCOMNTOOLS=%VS180COMNTOOLS%"
+   ) else (
+-    if DEFINED VS160COMNTOOLS (
+-      set "FB_VSCOMNTOOLS=%VS160COMNTOOLS%"
++    if DEFINED VS170COMNTOOLS (
++      set "FB_VSCOMNTOOLS=%VS170COMNTOOLS%"
+     ) else (
+-      if DEFINED VS150COMNTOOLS (
+-        set "FB_VSCOMNTOOLS=%VS150COMNTOOLS%"
++      if DEFINED VS160COMNTOOLS (
++        set "FB_VSCOMNTOOLS=%VS160COMNTOOLS%"
+       ) else (
+-        goto :HELP
++        if DEFINED VS150COMNTOOLS (
++          set "FB_VSCOMNTOOLS=%VS150COMNTOOLS%"
++        ) else (
++          goto :HELP
++        )
+       )
+     )
+   )
+@@ -64,6 +68,10 @@ for %%v in ( %* )  do (
+ :: Now set some firebird build specific variables that depend upon the
+ :: version of Visual Studio that is being used for the build.
+ @if DEFINED FB_VSCOMNTOOLS (
++  if "%FB_VSCOMNTOOLS%" == "%VS180COMNTOOLS%" (
++    set MSVC_VERSION=15
++    set MSVC_CMAKE_GENERATOR=Visual Studio 18 2026
++  )
+   if "%FB_VSCOMNTOOLS%" == "%VS170COMNTOOLS%" (
+     set MSVC_VERSION=15
+     set MSVC_CMAKE_GENERATOR=Visual Studio 17 2022
+-- 
+2.53.0
+

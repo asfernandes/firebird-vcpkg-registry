@@ -11,6 +11,8 @@ vcpkg_from_github(
         windows-timeout.patch
         osx-icu-rpath.patch
         osx-unvcpkg.patch
+        windows-vs2026-build-files.patch
+        windows-vs2026-build-script.patch
 )
 
 if(VCPKG_TARGET_IS_WINDOWS)
