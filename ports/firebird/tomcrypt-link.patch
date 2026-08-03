@@ -1,0 +1,13 @@
+diff --git a/configure.ac b/configure.ac
+--- a/configure.ac
++++ b/configure.ac
+@@ -1020,8 +1020,8 @@ dnl check for tomcrypt presence
+ 		XE_RESTORE_ENV()
+ 		XE_SAVE_ENV()
+ 		LIBS=
+ 		AC_CHECK_LIB(tomcrypt, sha1_init, CRYPTLIB=-ltomcrypt,
+-			AC_MSG_ERROR(Library tomcrypt not found - please install development tomcrypt package or use --with-builtin-tomcrypt))
++			AC_MSG_ERROR(Library tomcrypt not found - please install development tomcrypt package or use --with-builtin-tomcrypt), -ltommath)
+ 		XE_RESTORE_ENV()
+ 	fi
+ fi
