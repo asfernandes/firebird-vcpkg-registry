@@ -2516,6 +2516,44 @@ index 1816cc0d52..6baecbcbd0 100644
  }
  
 +#endif // HAVE_TOMCRYPT
+diff --git a/src/common/classes/alloc.cpp b/src/common/classes/alloc.cpp
+index 5c897f9fbd..2136b8f20f 100644
+--- a/src/common/classes/alloc.cpp
++++ b/src/common/classes/alloc.cpp
+@@ -3126,3 +3126,17 @@ void operator delete[](void* mem) noexcept
+ {
+ 	MemoryPool::globalFree(mem);
+ }
++
++#ifdef DEBUG_GDS_ALLOC
++#if __cplusplus >= 201402L
++void operator delete(void* mem, std::size_t s) noexcept
++{
++	MemoryPool::globalFree(mem);
++}
++
++void operator delete[](void* mem, std::size_t s) noexcept
++{
++	MemoryPool::globalFree(mem);
++}
++#endif
++#endif
+diff --git a/src/common/classes/alloc.h b/src/common/classes/alloc.h
+index 40de23c4da..37011f6854 100644
+--- a/src/common/classes/alloc.h
++++ b/src/common/classes/alloc.h
+@@ -395,6 +395,11 @@ inline void operator delete[](void* mem, std::size_t s ALLOC_PARAMS) noexcept
+ extern void operator delete(void* mem) noexcept;
+ extern void operator delete[](void* mem) noexcept;
+ 
++#if __cplusplus >= 201402L
++extern void operator delete(void* mem, std::size_t s) noexcept;
++extern void operator delete[](void* mem, std::size_t s) noexcept;
++#endif
++
+ #endif // DEBUG_GDS_ALLOC
+ 
+ namespace Firebird
 diff --git a/src/common/classes/init.h b/src/common/classes/init.h
 index 7b26f63150..e5555a705e 100644
 --- a/src/common/classes/init.h
@@ -2572,6 +2610,62 @@ index c4418feceb..5860a6723f 100644
  
  		if (actCtx.hModule)
  		{
+diff --git a/src/include/cross/android.arm64 b/src/include/cross/android.arm64
+index 19e4676c01..187238f7cf 100644
+--- a/src/include/cross/android.arm64
++++ b/src/include/cross/android.arm64
+@@ -22,6 +22,9 @@
+ /* Use binary relocation? */
+ #define ENABLE_BINRELOC
+ 
++/* Use TomCrypt library */
++#define HAVE_TOMCRYPT
++
+ /* Alignment of long */
+ #define FB_ALIGNMENT 8
+ 
+diff --git a/src/include/cross/android.arme b/src/include/cross/android.arme
+index 42ba40771e..2683086651 100644
+--- a/src/include/cross/android.arme
++++ b/src/include/cross/android.arme
+@@ -28,6 +28,9 @@
+ /* Use binary relocation? */
+ #define ENABLE_BINRELOC
+ 
++/* Use TomCrypt library */
++#define HAVE_TOMCRYPT
++
+ /* Alignment of long */
+ #define FB_ALIGNMENT 8
+ 
+diff --git a/src/include/cross/android.x86 b/src/include/cross/android.x86
+index 431f199f31..9d8612bdeb 100644
+--- a/src/include/cross/android.x86
++++ b/src/include/cross/android.x86
+@@ -22,6 +22,9 @@
+ /* Use binary relocation? */
+ #define ENABLE_BINRELOC
+ 
++/* Use TomCrypt library */
++#define HAVE_TOMCRYPT
++
+ /* Alignment of long */
+ #define FB_ALIGNMENT 8
+ 
+diff --git a/src/include/cross/android.x86_64 b/src/include/cross/android.x86_64
+index 7275c05444..7dc86535da 100644
+--- a/src/include/cross/android.x86_64
++++ b/src/include/cross/android.x86_64
+@@ -22,6 +22,9 @@
+ /* Use binary relocation? */
+ #define ENABLE_BINRELOC
+ 
++/* Use TomCrypt library */
++#define HAVE_TOMCRYPT
++
+ /* Alignment of long */
+ #define FB_ALIGNMENT 8
+ 
 diff --git a/src/include/gen/autoconfig.h.in b/src/include/gen/autoconfig.h.in
 index 709c100c8a..78a8294e50 100644
 --- a/src/include/gen/autoconfig.h.in
