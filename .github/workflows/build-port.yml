@@ -4,14 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       port:
-        description: Port to install
+        description: Port whose example to build
         required: true
         type: choice
         options:
           - firebird
           - fb-cpp
       version:
-        description: Optional version, for example 5.0.4 or 5.0.4#3. Empty uses the selected branch.
+        description: Optional version of the selected port, for example 5.0.4 or 5.0.4#3. Empty uses the selected branch.
         required: false
         type: string
 
@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   build:
-    name: ${{ inputs.port }} on ${{ matrix.os }} (${{ matrix.linkage }})
+    name: ${{ inputs.port }} example on ${{ matrix.os }} (${{ matrix.linkage }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -47,8 +47,6 @@ jobs:
     env:
       PORT: ${{ inputs.port }}
       VERSION: ${{ inputs.version }}
-      # This is also the baseline used by the example manifests in this repository.
-      VCPKG_COMMIT: cf9b6f1a47898a888f9e86e346a9adfa68357380
       VCPKG_TRIPLET: ${{ matrix.triplet }}
 
     steps:
@@ -58,7 +56,7 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
 
-      - name: Bootstrap vcpkg
+      - name: Use preinstalled vcpkg
         if: runner.os != 'Windows'
         shell: bash
         run: |
@@ -69,18 +67,9 @@ jobs:
             *) echo "Unsupported port: $PORT" >&2; exit 1 ;;
           esac
 
-          vcpkg_root="$RUNNER_TEMP/vcpkg"
-          rm -rf "$vcpkg_root"
-          mkdir -p "$vcpkg_root"
-          git -C "$vcpkg_root" init
-          git -C "$vcpkg_root" remote add origin https://github.com/microsoft/vcpkg.git
-          # Versioned builtin ports may refer to tree objects from earlier commits.
-          git -C "$vcpkg_root" fetch --no-tags origin "$VCPKG_COMMIT"
-          git -C "$vcpkg_root" checkout --detach FETCH_HEAD
-          "$vcpkg_root/bootstrap-vcpkg.sh" -disableMetrics
-          echo "VCPKG_ROOT=$vcpkg_root" >> "$GITHUB_ENV"
+          echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
 
-      - name: Bootstrap vcpkg
+      - name: Use preinstalled vcpkg
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -90,33 +79,7 @@ jobs:
             throw "Unsupported port: $env:PORT"
           }
 
-          $vcpkgRoot = Join-Path $env:RUNNER_TEMP 'vcpkg'
-          if (Test-Path -LiteralPath $vcpkgRoot) {
-            Remove-Item -LiteralPath $vcpkgRoot -Recurse -Force
-          }
-          New-Item -ItemType Directory -Path $vcpkgRoot -Force | Out-Null
-          git -C $vcpkgRoot init
-          if ($LASTEXITCODE -ne 0) {
-            throw 'Could not initialize the vcpkg repository'
-          }
-          git -C $vcpkgRoot remote add origin https://github.com/microsoft/vcpkg.git
-          if ($LASTEXITCODE -ne 0) {
-            throw 'Could not configure the vcpkg repository'
-          }
-          # Versioned builtin ports may refer to tree objects from earlier commits.
-          git -C $vcpkgRoot fetch --no-tags origin $env:VCPKG_COMMIT
-          if ($LASTEXITCODE -ne 0) {
-            throw "Could not fetch vcpkg commit $env:VCPKG_COMMIT"
-          }
-          git -C $vcpkgRoot checkout --detach FETCH_HEAD
-          if ($LASTEXITCODE -ne 0) {
-            throw "Could not check out vcpkg commit $env:VCPKG_COMMIT"
-          }
-          & (Join-Path $vcpkgRoot 'bootstrap-vcpkg.bat') -disableMetrics
-          if ($LASTEXITCODE -ne 0) {
-            throw 'vcpkg bootstrap failed'
-          }
-          Add-Content -LiteralPath $env:GITHUB_ENV -Value "VCPKG_ROOT=$vcpkgRoot"
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT"
 
       - name: Prepare manifest and branch overlay
         if: runner.os != 'Windows'
@@ -129,6 +92,8 @@ jobs:
           rm -rf "$overlay" "$manifest_root"
           mkdir -p "$overlay/ports" "$manifest_root"
           cp -R "$GITHUB_WORKSPACE/ports/." "$overlay/ports/"
+          cp -R "$GITHUB_WORKSPACE/examples/$PORT/." "$manifest_root/"
+          rm -rf "$manifest_root/build"
 
           if [[ -n "$VERSION" ]]; then
             version_file="$GITHUB_WORKSPACE/versions/${PORT:0:1}-/$PORT.json"
@@ -163,20 +128,17 @@ jobs:
           fi
 
           baseline="$(git -C "$VCPKG_ROOT" rev-parse HEAD)"
-          jq -n --arg port "$PORT" \
-            '{name: "registry-port-test", "version-string": "0", dependencies: [$port]}' \
-            > "$manifest_root/vcpkg.json"
           jq -n --arg baseline "$baseline" --arg overlay "$overlay/ports" \
             '{"default-registry": {kind: "builtin", baseline: $baseline}, "overlay-ports": [$overlay]}' \
             > "$manifest_root/vcpkg-configuration.json"
 
           {
-            echo "### vcpkg port build"
-            echo "- Port: $PORT"
+            echo "### vcpkg example build"
+            echo "- Example: $PORT"
             if [[ -n "$VERSION" ]]; then
-              echo "- Version: $VERSION"
+              echo "- Main port version: $VERSION"
             else
-              echo "- Version: selected branch contents"
+              echo "- Main port version: selected branch contents"
             fi
             echo "- Triplet: $VCPKG_TRIPLET"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -192,6 +154,9 @@ jobs:
           Remove-Item -LiteralPath $overlay, $manifestRoot -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Path (Join-Path $overlay 'ports'), $manifestRoot -Force | Out-Null
           Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'ports\*') -Destination (Join-Path $overlay 'ports') -Recurse -Force
+          $exampleRoot = Join-Path $env:GITHUB_WORKSPACE "examples\$($env:PORT)"
+          Copy-Item -Path (Join-Path $exampleRoot '*') -Destination $manifestRoot -Recurse -Force
+          Remove-Item -LiteralPath (Join-Path $manifestRoot 'build') -Recurse -Force -ErrorAction SilentlyContinue
 
           if (-not [string]::IsNullOrEmpty($env:VERSION)) {
             $versionFile = Join-Path $env:GITHUB_WORKSPACE "versions\$($env:PORT.Substring(0, 1))-\$($env:PORT).json"
@@ -235,13 +200,6 @@ jobs:
             throw 'Could not determine the vcpkg baseline'
           }
 
-          $manifest = [ordered]@{
-            name = 'registry-port-test'
-            'version-string' = '0'
-            dependencies = @($env:PORT)
-          }
-          $manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $manifestRoot 'vcpkg.json') -Encoding utf8NoBOM
-
           $configuration = [ordered]@{
             'default-registry' = [ordered]@{
               kind = 'builtin'
@@ -251,12 +209,12 @@ jobs:
           }
           $configuration | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $manifestRoot 'vcpkg-configuration.json') -Encoding utf8NoBOM
 
-          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '### vcpkg port build'
-          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- Port: $($env:PORT)"
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '### vcpkg example build'
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- Example: $($env:PORT)"
           if ([string]::IsNullOrEmpty($env:VERSION)) {
-            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '- Version: selected branch contents'
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '- Main port version: selected branch contents'
           } else {
-            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- Version: $($env:VERSION)"
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- Main port version: $($env:VERSION)"
           }
           Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- Triplet: $($env:VCPKG_TRIPLET)"
 
@@ -275,15 +233,20 @@ jobs:
         if: runner.os == 'MacOS'
         run: echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
 
-      - name: Install selected port
+      - name: Build selected example
         if: runner.os != 'Windows'
         shell: bash
         run: |
           set -euo pipefail
-          cd "$RUNNER_TEMP/vcpkg-manifest"
-          "$VCPKG_ROOT/vcpkg" install --triplet "$VCPKG_TRIPLET" --clean-after-build --disable-metrics
+          build_root="$RUNNER_TEMP/example-build"
+          rm -rf "$build_root"
+          cmake -S "$RUNNER_TEMP/vcpkg-manifest" -B "$build_root" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET" \
+            '-DVCPKG_INSTALL_OPTIONS=--clean-after-build;--disable-metrics'
+          cmake --build "$build_root" --config Release --parallel
 
-      - name: Install selected port
+      - name: Build selected example
         if: runner.os == 'Windows'
         shell: cmd
         run: |
@@ -320,6 +283,9 @@ jobs:
 
           call "%VS_TOOLS%\VsDevCmd.bat" -arch=amd64 -host_arch=amd64 -no_logo
           if errorlevel 1 exit /b 1
-          cd /d "%RUNNER_TEMP%\vcpkg-manifest"
-          "%VCPKG_ROOT%\vcpkg.exe" install --triplet "%VCPKG_TRIPLET%" --clean-after-build --disable-metrics
+          set "BUILD_ROOT=%RUNNER_TEMP%\example-build"
+          if exist "%BUILD_ROOT%" rmdir /s /q "%BUILD_ROOT%"
+          cmake -S "%RUNNER_TEMP%\vcpkg-manifest" -B "%BUILD_ROOT%" -A x64 -DCMAKE_BUILD_TYPE=Release -DVCPKG_TARGET_TRIPLET="%VCPKG_TRIPLET%" "-DVCPKG_INSTALL_OPTIONS=--clean-after-build;--disable-metrics"
+          if errorlevel 1 exit /b 1
+          cmake --build "%BUILD_ROOT%" --config Release --parallel
           if errorlevel 1 exit /b 1
