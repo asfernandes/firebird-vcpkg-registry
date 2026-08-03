@@ -48,7 +48,7 @@ jobs:
       PORT: ${{ inputs.port }}
       VERSION: ${{ inputs.version }}
       # This is also the baseline used by the example manifests in this repository.
-      VCPKG_COMMIT: 8fbf295ab5283313932f65a597a2c1f09a73fafd
+      VCPKG_COMMIT: cf9b6f1a47898a888f9e86e346a9adfa68357380
       VCPKG_TRIPLET: ${{ matrix.triplet }}
 
     steps:
