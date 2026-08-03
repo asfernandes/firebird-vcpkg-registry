@@ -7,12 +7,14 @@ vcpkg_from_github(
     SHA512 470e371733817b20d84a4dc45a23ca54fb82e150efbec17b3cd3e71d1867023c30dd0aaa83c807f4e03cf0403cd47eeb0b7df2a09a3be897a0f6dddc0bbeeb6a
     HEAD_REF master
     PATCHES
-        windows-paths.diff
-        windows-timeout.patch
-        osx-icu-rpath.patch
-        osx-unvcpkg.patch
         windows-vs2026-build-files.patch
         windows-vs2026-build-script.patch
+        static-build.patch
+        windows-paths.diff
+        windows-timeout.patch
+        tomcrypt-link.patch
+        osx-icu-rpath.patch
+        osx-unvcpkg.patch
 )
 
 if(VCPKG_TARGET_IS_WINDOWS)

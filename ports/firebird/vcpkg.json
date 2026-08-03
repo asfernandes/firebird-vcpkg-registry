@@ -1,7 +1,7 @@
 {
   "name": "firebird",
   "version-semver": "5.0.4",
-  "port-version": 1,
+  "port-version": 2,
   "description": "Firebird SQL DBMS client library",
   "homepage": "https://firebirdsql.org/",
   "license": "LicenseRef-IDPL OR LicenseRef-IPL",
@@ -13,12 +13,8 @@
       "default-features": false
     },
     {
-      "name": "libtomcrypt",
-      "platform": "!windows"
-    },
-    {
       "name": "libtommath",
-      "platform": "!windows"
+      "platform": "!windows | (windows & static)"
     },
     {
       "name": "ncurses",
@@ -30,5 +26,13 @@
       "host": true,
       "platform": "linux"
     }
-  ]
+  ],
+  "features": {
+    "chacha": {
+      "description": "Build the ChaCha wire encryption plugin",
+      "dependencies": [
+        "libtomcrypt"
+      ]
+    }
+  }
 }

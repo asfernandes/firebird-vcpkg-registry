@@ -20,17 +20,29 @@ permissions:
 
 jobs:
   build:
-    name: ${{ inputs.port }} on ${{ matrix.os }}
+    name: ${{ inputs.port }} on ${{ matrix.os }} (${{ matrix.linkage }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
+            linkage: static
             triplet: x64-linux
+          - os: ubuntu-latest
+            linkage: dynamic
+            triplet: x64-linux-dynamic
           - os: macos-latest
+            linkage: static
             triplet: arm64-osx
+          - os: macos-latest
+            linkage: dynamic
+            triplet: arm64-osx-dynamic
           - os: windows-latest
+            linkage: static
+            triplet: x64-windows-static
+          - os: windows-latest
+            linkage: dynamic
             triplet: x64-windows
     env:
       PORT: ${{ inputs.port }}
@@ -62,7 +74,8 @@ jobs:
           mkdir -p "$vcpkg_root"
           git -C "$vcpkg_root" init
           git -C "$vcpkg_root" remote add origin https://github.com/microsoft/vcpkg.git
-          git -C "$vcpkg_root" fetch --depth=1 origin "$VCPKG_COMMIT"
+          # Versioned builtin ports may refer to tree objects from earlier commits.
+          git -C "$vcpkg_root" fetch --no-tags origin "$VCPKG_COMMIT"
           git -C "$vcpkg_root" checkout --detach FETCH_HEAD
           "$vcpkg_root/bootstrap-vcpkg.sh" -disableMetrics
           echo "VCPKG_ROOT=$vcpkg_root" >> "$GITHUB_ENV"
@@ -90,7 +103,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw 'Could not configure the vcpkg repository'
           }
-          git -C $vcpkgRoot fetch --depth=1 origin $env:VCPKG_COMMIT
+          # Versioned builtin ports may refer to tree objects from earlier commits.
+          git -C $vcpkgRoot fetch --no-tags origin $env:VCPKG_COMMIT
           if ($LASTEXITCODE -ne 0) {
             throw "Could not fetch vcpkg commit $env:VCPKG_COMMIT"
           }
@@ -250,12 +264,16 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          sudo apt-get -y -o Dpkg::Progress-Fancy=0 install autoconf autoconf-archive automake libtool
+          sudo apt-get -y -o Dpkg::Progress-Fancy=0 install autoconf autoconf-archive automake libtool libtool-bin
 
       - name: Install prerequisites
         if: runner.os == 'MacOS'
         run: |
-          brew install --quiet autoconf autoconf-archive automake libtool
+          brew install --quiet autoconf autoconf-archive automake libtool llvm
+
+      - name: Add LLVM tools to PATH
+        if: runner.os == 'MacOS'
+        run: echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
 
       - name: Install selected port
         if: runner.os != 'Windows'

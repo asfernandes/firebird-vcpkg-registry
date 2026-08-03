@@ -50,14 +50,20 @@ vcpkg will pull the port definition from this registry and build the Firebird cl
 
 ## Firebird port specifics
 
-The upstream Firebird client only ships as a shared library, so the `firebird` port in this registry always produces
-`fbclient` as a dynamic library regardless of the selected triplet. Most vcpkg triplets default to static builds on
-Linux/macOS, which creates two important implications:
+The `firebird` port follows the library linkage requested by the vcpkg triplet:
 
-- You can safely depend on `firebird` from static builds of your project as long as you load the produced shared library
-  at runtime.
-- Dependencies that Firebird needs to load dynamically—most notably `icu` for time-zone handling—must also be available
-  as dynamic libraries or Firebird will fail to load it.
+- A static triplet builds and links the Firebird client (`fbclient`) as a static library.
+- A dynamic triplet builds and links `fbclient` as a shared library, which must be available at runtime.
+
+For example, `x64-linux` selects static linkage and `x64-linux-dynamic` selects shared linkage. Use the equivalent
+static or dynamic triplet for other target platforms.
+
+Static client library support is available in Firebird's upstream `master` branch. This registry currently builds
+Firebird v5.0.4, where it is not yet present, so the v5 port carries the support as
+`ports/firebird/static-build.patch`.
+
+The client can also load dependencies dynamically—most notably `icu` for time-zone handling—so those dependencies must
+be available as dynamic libraries or Firebird will fail to load them.
 
 To keep the rest of your dependencies static while turning on a dynamic build for `icu`, create an overlay triplet, for
 example:

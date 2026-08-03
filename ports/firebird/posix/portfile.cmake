@@ -19,10 +19,13 @@ set(FIREBIRD_CONFIGURE_OPTIONS
     --with-fbplugins=plugins/${PORT}
     --with-fbmsg=share/${PORT}
     --with-fbtzdata=share/${PORT}/tzdata
-    "CPPFLAGS=-I${CURRENT_HOST_INSTALLED_DIR}/include"
-    "CXXFLAGS=-I${CURRENT_HOST_INSTALLED_DIR}/include"
-    "LDFLAGS=-L${CURRENT_HOST_INSTALLED_DIR}/lib"
+    "CPPFLAGS=-I${CURRENT_INSTALLED_DIR}/include -I${CURRENT_HOST_INSTALLED_DIR}/include"
+    "CXXFLAGS=-I${CURRENT_INSTALLED_DIR}/include -I${CURRENT_HOST_INSTALLED_DIR}/include"
 )
+
+if(NOT "chacha" IN_LIST FEATURES)
+    list(APPEND FIREBIRD_CONFIGURE_OPTIONS --without-tomcrypt)
+endif()
 
 vcpkg_configure_make(
     SOURCE_PATH "${SOURCE_PATH}"
@@ -30,11 +33,18 @@ vcpkg_configure_make(
     AUTOCONFIG
     OPTIONS
         ${FIREBIRD_CONFIGURE_OPTIONS}
+    OPTIONS_RELEASE
+        "LDFLAGS=-L${CURRENT_INSTALLED_DIR}/lib -L${CURRENT_HOST_INSTALLED_DIR}/lib"
     OPTIONS_DEBUG
         --enable-developer
+        "LDFLAGS=-L${CURRENT_INSTALLED_DIR}/debug/lib -L${CURRENT_INSTALLED_DIR}/lib -L${CURRENT_HOST_INSTALLED_DIR}/lib"
 )
 
-vcpkg_build_make()
+if(VCPKG_LIBRARY_LINKAGE STREQUAL "static")
+    vcpkg_build_make(BUILD_TARGET client_static)
+else()
+    vcpkg_build_make()
+endif()
 
 
 # Release build
@@ -47,33 +57,35 @@ if(NOT VCPKG_BUILD_TYPE OR VCPKG_BUILD_TYPE STREQUAL "release")
         DESTINATION "${CURRENT_PACKAGES_DIR}"
     )
 
-    file(GLOB FIREBIRD_RELEASE_LIBS
-        "${SOURCE_COPY_REL_PATH}/gen/Release/firebird/lib/libfbclient*"
-    )
+	file(GLOB FIREBIRD_RELEASE_LIBS
+		"${SOURCE_COPY_REL_PATH}/gen/Release/firebird/lib/libfbclient*"
+	)
 
-    file(
-        INSTALL ${FIREBIRD_RELEASE_LIBS}
-        DESTINATION "${CURRENT_PACKAGES_DIR}/lib"
-        USE_SOURCE_PERMISSIONS
-    )
+	file(
+		INSTALL ${FIREBIRD_RELEASE_LIBS}
+		DESTINATION "${CURRENT_PACKAGES_DIR}/lib"
+		USE_SOURCE_PERMISSIONS
+	)
 
     file(GLOB PLUGINS_FILES_RELEASE
         "${SOURCE_COPY_REL_PATH}/gen/Release/firebird/plugins/*"
     )
 
-    if(NOT VCPKG_TARGET_IS_OSX)
-        foreach(plugin ${PLUGINS_FILES_RELEASE})
-            execute_process(
-                COMMAND "${PATCHELF}" --set-rpath "$ORIGIN/../../lib" ${plugin}
-            )
-        endforeach()
-    endif()
+    if(PLUGINS_FILES_RELEASE)
+        if(NOT VCPKG_TARGET_IS_OSX)
+            foreach(plugin ${PLUGINS_FILES_RELEASE})
+                execute_process(
+                    COMMAND "${PATCHELF}" --set-rpath "$ORIGIN/../../lib" ${plugin}
+                )
+            endforeach()
+        endif()
 
-    file(
-        INSTALL ${PLUGINS_FILES_RELEASE}
-        DESTINATION "${CURRENT_PACKAGES_DIR}/plugins/${PORT}"
-        USE_SOURCE_PERMISSIONS
-    )
+        file(
+            INSTALL ${PLUGINS_FILES_RELEASE}
+            DESTINATION "${CURRENT_PACKAGES_DIR}/plugins/${PORT}"
+            USE_SOURCE_PERMISSIONS
+        )
+    endif()
 
     file(
         INSTALL "${SOURCE_COPY_REL_PATH}/gen/Release/firebird/firebird.msg"
@@ -92,33 +104,35 @@ endif()
 if(NOT VCPKG_BUILD_TYPE OR VCPKG_BUILD_TYPE STREQUAL "debug")
     set(SOURCE_COPY_DBG_PATH "${CURRENT_BUILDTREES_DIR}/${TARGET_TRIPLET}-dbg")
 
-    file(GLOB FIREBIRD_DEBUG_LIBS
-        "${SOURCE_COPY_DBG_PATH}/gen/Debug/firebird/lib/libfbclient*"
-    )
+	file(GLOB FIREBIRD_DEBUG_LIBS
+		"${SOURCE_COPY_DBG_PATH}/gen/Debug/firebird/lib/libfbclient*"
+	)
 
-    file(
-        INSTALL ${FIREBIRD_DEBUG_LIBS}
-        DESTINATION "${CURRENT_PACKAGES_DIR}/debug/lib"
-        USE_SOURCE_PERMISSIONS
-    )
+	file(
+		INSTALL ${FIREBIRD_DEBUG_LIBS}
+		DESTINATION "${CURRENT_PACKAGES_DIR}/debug/lib"
+		USE_SOURCE_PERMISSIONS
+	)
 
     file(GLOB PLUGINS_FILES_DEBUG
         "${SOURCE_COPY_DBG_PATH}/gen/Debug/firebird/plugins/*"
     )
 
-    if(NOT VCPKG_TARGET_IS_OSX)
-        foreach(plugin ${PLUGINS_FILES_DEBUG})
-            execute_process(
-                COMMAND "${PATCHELF}" --set-rpath "$ORIGIN/../../lib" ${plugin}
-            )
-        endforeach()
-    endif()
+    if(PLUGINS_FILES_DEBUG)
+        if(NOT VCPKG_TARGET_IS_OSX)
+            foreach(plugin ${PLUGINS_FILES_DEBUG})
+                execute_process(
+                    COMMAND "${PATCHELF}" --set-rpath "$ORIGIN/../../lib" ${plugin}
+                )
+            endforeach()
+        endif()
 
-    file(
-        INSTALL ${PLUGINS_FILES_DEBUG}
-        DESTINATION "${CURRENT_PACKAGES_DIR}/debug/plugins/${PORT}"
-        USE_SOURCE_PERMISSIONS
-    )
+        file(
+            INSTALL ${PLUGINS_FILES_DEBUG}
+            DESTINATION "${CURRENT_PACKAGES_DIR}/debug/plugins/${PORT}"
+            USE_SOURCE_PERMISSIONS
+        )
+    endif()
 
     file(
         INSTALL "${SOURCE_COPY_DBG_PATH}/gen/Debug/firebird/firebird.msg"

@@ -1,0 +1,2825 @@
+diff --git a/.github/workflows/static-build.yml b/.github/workflows/static-build.yml
+new file mode 100644
+index 0000000000..69751002e6
+--- /dev/null
++++ b/.github/workflows/static-build.yml
+@@ -0,0 +1,240 @@
++name: Static Client Build
++
++on:
++  workflow_dispatch:
++
++jobs:
++
++  build-linux-static-client:
++    name: build-linux-static-client-${{ matrix.arch }}
++    runs-on: ${{ (matrix.arch == 'arm64' && 'ubuntu-24.04-arm') || 'ubuntu-24.04' }}
++
++    strategy:
++      fail-fast: false
++      matrix:
++        arch: [x64, x86]
++
++    steps:
++      - name: Checkout
++        uses: actions/checkout@v4
++        with:
++          fetch-depth: 10
++
++      - name: Write build script
++        run: |
++          mkdir -p gen
++          cat > /tmp/build-static-client.sh <<'EOF'
++          #!/bin/sh
++          set -e
++          gcc -v
++          ld -v
++          make -v
++          cd /home/ctng/firebird-build
++          /firebird/autogen.sh \
++            --host=$BUILD_ARCH \
++            --prefix=/opt/firebird \
++            --enable-binreloc \
++            --with-builtin-tomcrypt \
++            --with-termlib=:libncurses.a \
++            --with-atomiclib=:libatomic.a \
++            --enable-client-only
++          make client_static -j$(nproc)
++          # CXX lives in gen/make.defaults (substituted by configure). The
++          # top-level Makefile only forwards targets to gen/ and has no CXX=.
++          CXX=$(sed -n 's/^[[:space:]]*CXX[[:space:]]*=[[:space:]]*//p' gen/make.defaults | head -n 1)
++          if test -z "$CXX"; then
++            echo "error: could not determine CXX from gen/make.defaults" >&2
++            exit 1
++          fi
++          echo "Linking example with CXX=$CXX"
++          "$CXX" /firebird/examples/interfaces/01.create.cpp \
++            -I/firebird/src/include \
++            -I/home/ctng/firebird-build/gen/Release/firebird/include \
++            -L/home/ctng/firebird-build/gen/Release/firebird/lib \
++            -L/home/ctng/firebird-build/temp/Release \
++            -lfbclient -ltommath -lz -ldl -pthread \
++            -o /tmp/01.create
++          EOF
++          chmod +x /tmp/build-static-client.sh
++
++      - name: Build
++        run: |
++          docker run --platform ${{ (matrix.arch == 'x64' && 'amd64') || 'i386' }} --rm \
++            -e CTNG_UID=$(id -u) -e CTNG_GID=$(id -g) \
++            -v ${{ github.workspace }}:/firebird:ro \
++            -v ${{ github.workspace }}/gen:/home/ctng/firebird-build/gen \
++            -v /tmp/build-static-client.sh:/build.sh:ro \
++            firebirdsql/firebird-builder-linux:fb6-${{ matrix.arch }}-ng-v2
++
++      - name: Upload static library
++        uses: actions/upload-artifact@v4
++        with:
++          name: firebird-linux-${{ matrix.arch }}-static-client
++          path: gen/Release/firebird/lib/libfbclient.a
++
++  build-linux-static-client-arm64:
++    name: build-linux-static-client-arm64
++    runs-on: ubuntu-24.04-arm
++
++    steps:
++      - name: Checkout
++        uses: actions/checkout@v4
++        with:
++          fetch-depth: 10
++
++      - name: Prepare
++        run: |
++          sudo apt-get update
++          sudo apt-get install -y libtool-bin automake autoconf-archive libtool libicu-dev zlib1g-dev cmake
++
++      - name: Build
++        run: |
++          ./autogen.sh \
++            --with-builtin-tommath \
++            --with-builtin-tomcrypt \
++            --without-editline \
++            --enable-binreloc \
++            --prefix=/opt/firebird \
++            --enable-client-only
++          make client_static -j$(nproc)
++
++      - name: Compile and link interface example
++        run: |
++          g++ examples/interfaces/01.create.cpp \
++            -Isrc/include \
++            -Igen/Release/firebird/include \
++            -Lgen/Release/firebird/lib \
++            -Ltemp/Release \
++            -lfbclient -ltommath -lz -ldl -pthread \
++            -o /tmp/01.create
++
++      - name: Upload static library
++        uses: actions/upload-artifact@v4
++        with:
++          name: firebird-linux-arm64-static-client
++          path: gen/Release/firebird/lib/libfbclient.a
++
++  build-macos-static-client:
++    name: build-macos-static-client-${{ matrix.arch }}
++    runs-on: ${{ (matrix.arch == 'arm64' && 'macos-15') || 'macos-15-intel' }}
++
++    strategy:
++      fail-fast: false
++      matrix:
++        arch: [x64, arm64]
++
++    steps:
++      - name: Checkout
++        uses: actions/checkout@v4
++        with:
++          fetch-depth: 10
++          submodules: 'true'
++
++      - name: Prepare - Install tools
++        run: |
++          brew install --quiet automake autoconf-archive libtool ninja llvm
++          echo "${{ (matrix.arch == 'arm64' && '/opt/homebrew/opt/llvm/bin') || '/usr/local/opt/llvm/bin' }}" >> $GITHUB_PATH
++
++      - name: Restore vcpkg cache
++        uses: actions/cache/restore@v4
++        id: restore-vcpkg-cache
++        with:
++          path: ~/.cache/vcpkg/archives
++          key: vcpkg-cache-${{ runner.os }}-${{ matrix.arch }}-staticclient-${{ hashFiles('vcpkg-custom/**', 'vcpkg.json', 'vcpkg-configuration.json') }}
++          restore-keys: |
++            vcpkg-cache-${{ runner.os }}-${{ matrix.arch }}-staticclient-
++            vcpkg-cache-${{ runner.os }}-${{ matrix.arch }}-
++
++      - name: Build
++        run: |
++          export LIBTOOLIZE=glibtoolize
++          export LIBTOOL=glibtool
++          ./autogen.sh --with-builtin-tommath --with-builtin-tomcrypt --enable-client-only
++          make client_static -j4
++
++      - name: Compile and link interface example
++        run: |
++          clang++ examples/interfaces/01.create.cpp \
++            -Isrc/include \
++            -Igen/Release/firebird/include \
++            -Lgen/Release/firebird/lib \
++            -Ltemp/Release \
++            -lfbclient -ltommath -lz \
++            -liconv -lobjc -framework CoreFoundation -framework Foundation -framework Security \
++            -o /tmp/01.create
++
++      - name: Upload static library
++        uses: actions/upload-artifact@v4
++        with:
++          name: firebird-macos-${{ matrix.arch }}-static-client
++          path: gen/Release/firebird/lib/libfbclient.a
++
++      - name: Save vcpkg cache
++        uses: actions/cache/save@v4
++        if: steps.restore-vcpkg-cache.outputs.cache-hit != 'true'
++        with:
++          path: ~/.cache/vcpkg/archives
++          key: ${{ steps.restore-vcpkg-cache.outputs.cache-primary-key }}
++
++  build-windows-static-client:
++    name: build-windows-static-client-${{ matrix.platform }}
++    runs-on: windows-2025
++    env:
++      VS_VERSION: '2026'
++
++    strategy:
++      fail-fast: false
++      matrix:
++        platform: [x64, x86]
++
++    steps:
++      - name: Checkout
++        uses: actions/checkout@v4
++        with:
++          fetch-depth: 10
++
++      - name: Prepare
++        shell: cmd
++        run: |
++          for /r %%i in (*.bat) do unix2dos "%%i"
++
++      - name: Prepare envs
++        shell: cmd
++        env:
++          PLATFORM: ${{ matrix.platform }}
++        run: |
++          if "%PLATFORM%" == "x64" set FB_VS_ARCH=amd64
++          if "%PLATFORM%" == "x64" set FB_PROCESSOR_ARCHITECTURE=AMD64
++          if "%PLATFORM%" == "x86" set FB_VS_ARCH=x86
++          if "%PLATFORM%" == "x86" set FB_PROCESSOR_ARCHITECTURE=x86
++          if "%PLATFORM%" == "x86" set FB_LIBRARY_PLATFORM=Win32
++          if not "%PLATFORM%" == "x86" set FB_LIBRARY_PLATFORM=%PLATFORM%
++          echo FB_VS_ARCH=%FB_VS_ARCH%>>%GITHUB_ENV%
++          echo FB_PROCESSOR_ARCHITECTURE=%FB_PROCESSOR_ARCHITECTURE%>>%GITHUB_ENV%
++          echo FB_LIBRARY_PLATFORM=%FB_LIBRARY_PLATFORM%>>%GITHUB_ENV%
++
++      - name: Build
++        shell: cmd
++        env:
++          PLATFORM: ${{ matrix.platform }}
++          VS_SCRIPT: C:\Program Files\Microsoft Visual Studio\18\Enterprise\Common7\Tools\VsDevCmd.bat
++        run: |
++          call "%VS_SCRIPT%" -arch=%FB_VS_ARCH%
++          set "PATH=%VSINSTALLDIR%VC\Tools\Llvm\x64\bin;%PATH%"
++          cd builds\win32
++          call run_all.bat CLIENT_ONLY=STATIC JUSTBUILD NOCLEAN
++
++      - name: Compile and link interface example
++        shell: cmd
++        env:
++          PLATFORM: ${{ matrix.platform }}
++          VS_SCRIPT: C:\Program Files\Microsoft Visual Studio\18\Enterprise\Common7\Tools\VsDevCmd.bat
++        run: |
++          call "%VS_SCRIPT%" -arch=%FB_VS_ARCH%
++          cl /nologo /EHsc /MD /Isrc\include /Ioutput_%FB_LIBRARY_PLATFORM%_release\include examples\interfaces\01.create.cpp output_%FB_LIBRARY_PLATFORM%_release\lib\fbclient_static_ms.lib extern\libtommath\lib\%FB_LIBRARY_PLATFORM%\Release\tommath.lib advapi32.lib bcrypt.lib legacy_stdio_definitions.lib mpr.lib ole32.lib psapi.lib shell32.lib user32.lib ws2_32.lib /Fe:%TEMP%\01.create.exe
++
++      - name: Upload static library
++        uses: actions/upload-artifact@v4
++        with:
++          name: firebird-windows-${{ matrix.platform }}-static-client
++          path: output_${{ env.FB_LIBRARY_PLATFORM }}_release\lib\fbclient_static_ms.lib
+diff --git a/builds/cmake/Configure.cmake b/builds/cmake/Configure.cmake
+index 9faa0e50eb..75db4b9726 100644
+--- a/builds/cmake/Configure.cmake
++++ b/builds/cmake/Configure.cmake
+@@ -91,6 +91,7 @@ if (${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang")
+ endif()
+ 
+ set(ENABLE_BINRELOC 1)
++set(HAVE_TOMCRYPT 1)
+ 
+ string(TOUPPER ${CMAKE_SYSTEM_NAME} CMAKE_SYSTEM_NAME_UPPER)
+ set(${CMAKE_SYSTEM_NAME_UPPER} 1)
+diff --git a/builds/posix/Makefile.in b/builds/posix/Makefile.in
+index 8f698b0a2a..9339023de2 100644
+--- a/builds/posix/Makefile.in
++++ b/builds/posix/Makefile.in
+@@ -254,7 +254,7 @@ endif
+ #
+ 
+ %.vers: $(ROOT)/builds/posix/%.vers
+-	sh vers.sh $(firstword $@)
++	cd $(dir $@) && sh vers.sh $(notdir $@)
+ 
+ export_lists: $(ALLVERS)
+ 
+@@ -465,6 +465,55 @@ $(LIBFIREBIRD_FULLNAME):	$(YValve_Objects) $(Remote_Client_Objects) $(COMMON_LIB
+ 	$(LINK_FIREBIRD) -o $@ $^ $(LINK_FIREBIRD_LIBS) $(call LIB_LINK_DARWIN_INSTALL_NAME,lib/libfbclient.$(SHRLIB_EXT))
+ 
+ 
++#___________________________________________________________________________
++# static client library (non-default, built on request with `make client_static`)
++# See doc/README.StaticClient.md for a detailed description of the static
++# client archive construction, symbol renaming, and archive slimming.
++#
++# client_static is meant to be usable as the very first target on a freshly
++# configured tree (i.e. without a prior full build), so - like
++# master_process above.
++#
++
++.PHONY: client_static client_static_process
++
++client_static:
++	$(MAKE) TARGET?=$(DefaultTarget) client_static_process
++
++client_static_process:
++	mkdir -p $(ROOT)/src/include/gen
++	ln -sf $(ROOT)/src/include/gen/autoconfig.auto $(ROOT)/src/include/gen/autoconfig.h
++	$(MAKE) updateBuildNum
++	$(MAKE) export_lists
++	$(MAKE) external
++	mkdir -p $(ROOT)/temp/extern/decNumber
++	(cd $(ROOT)/temp/extern/decNumber && $(AR) x $(ROOT)/extern/decNumber/libdecFloat.a)
++	$(MAKE) updateCloopInterfaces
++	$(MAKE) rest
++	$(MAKE) $(LIBFIREBIRD_STATIC)
++ifeq ($(WITH_TOMCRYPT),Y)
++	$(MAKE) chacha
++endif
++	$(MAKE) include_generic
++
++STATIC_CLIENT_SLIM_STAGE = $(ROOT)/temp/static_client_stage
++STATIC_CLIENT_SLIM_CREF  = $(ROOT)/temp/static_client_cref.txt
++STATIC_CLIENT_SLIM_PROBE = $(ROOT)/temp/static_client_probe.o
++
++$(LIBFIREBIRD_STATIC):	$(YValve_Objects) $(Remote_Client_Objects) $(Common_Objects) \
++			| $(GEN_ROOT)/$(FIREBIRD_VERS)
++	-$(RM) $@
++	$(STATICLIB_LINK) $@ $^ $(ROOT)/temp/extern/decNumber/*.o
++	$(SHELL) $(STATIC_CLIENT_SCRIPT) \
++		--archive $(abspath $@) \
++		--seeds-file $(GEN_ROOT)/$(FIREBIRD_VERS) \
++		--stage $(STATIC_CLIENT_SLIM_STAGE) \
++		--cref $(STATIC_CLIENT_SLIM_CREF) \
++		--probe $(STATIC_CLIENT_SLIM_PROBE) \
++		--objcopy $(OBJCOPY) \
++		--slim-mode $(STATIC_CLIENT_SLIM_MODE)
++
++
+ #___________________________________________________________________________
+ # core part - jrd's engine
+ #
+@@ -910,6 +959,7 @@ clean_makefiles:
+ 	$(RM) $(GEN_ROOT)/make*
+ 	-$(RM) $(GEN_ROOT)/darwin.defaults
+ 	-$(RM) $(GEN_ROOT)/vers.sh
++	-$(RM) $(GEN_ROOT)/static_client.sh
+ 	$(RM) `find $(GEN_ROOT)/install \( -type f -o -type l \) -print`
+ 	-$(RM) $(GEN_ROOT)/examples/Make*
+ 	$(RM) $(ROOT)/Makefile
+diff --git a/builds/posix/darwin.defaults b/builds/posix/darwin.defaults
+index d8350092c2..2cbf92d1ce 100644
+--- a/builds/posix/darwin.defaults
++++ b/builds/posix/darwin.defaults
+@@ -35,3 +35,15 @@ PLATFORM_FALLBACK=os/posix
+ STATIC_CXX_SUPPORT = -lsupc++ $(GCCS) -lgcc_eh -lSystem
+ 
+ INLINE_EDIT_SED:= -i ""
++
++# GNU objcopy cannot rewrite Mach-O object/archive files; llvm-objcopy can
++# (and supports --redefine-syms on Mach-O). Apple's own `nm` output is
++# compatible with the --defined-only/-g flags used by the comprehensive
++# symbol rename in the static client build.
++OBJCOPY = llvm-objcopy
++
++# Mach-O slim step. vers.sh's platform_darwin output already emits symbols
++# with a leading underscore, and the seeds flow through the script's
++# symbol-token parser unchanged. The slim itself is driven by Apple ld64's
++# -Wl,-map output (parsed by the same sed regex as the GNU -Wl,--cref path).
++STATIC_CLIENT_SLIM_MODE = darwin
+diff --git a/builds/posix/make.defaults b/builds/posix/make.defaults
+index 0d5717dde4..580f899b77 100755
+--- a/builds/posix/make.defaults
++++ b/builds/posix/make.defaults
+@@ -196,6 +196,20 @@ CXX =	@CXX@
+ LD =	@CXX@
+ OBJCOPY = @OBJCOPY@
+ READELF = @READELF@
++NM = nm
++
++# Helper script that performs the archive slim step and the
++# objcopy symbol rename for the static client library
++# (see target client_static and $(LIBFIREBIRD_STATIC) in
++# builds/posix/Makefile.in). Generated by autoconf from
++# builds/posix/static_client.sh.in.
++STATIC_CLIENT_SCRIPT = $(GEN_ROOT)/static_client.sh
++
++# Slim step variant passed to $(STATIC_CLIENT_SCRIPT). Default
++# "elf" uses GNU ld -Wl,--cref. Darwin overrides to "darwin"
++# in builds/posix/darwin.defaults, which routes through Apple
++# ld64's -Wl,-map output instead.
++STATIC_CLIENT_SLIM_MODE = elf
+ 
+ AC_CFLAGS = @CFLAGS@
+ AC_CXXFLAGS = @CXXFLAGS@
+@@ -261,6 +275,12 @@ LIBFIREBIRD_FULLNAME = $(LIB)/$(LibraryFullName)
+ LIBFIREBIRD_SONAME = $(LIB)/$(LibraryBaseName)
+ LIBFIREBIRD_BASENAME = $(LIB)/$(LibrarySoName)
+ 
++# Optional, non-default static client library (see target client_static).
++# Global operator new/delete are renamed inside this archive, so linking it
++# does not override the host application's own global operators.
++LibraryStaticName=$(LibraryFileName).a
++LIBFIREBIRD_STATIC = $(LIB)/$(LibraryStaticName)
++
+ # The firebird engine library name
+ 
+ EngineFileName=libEngine${OdsVersion}
+diff --git a/builds/posix/static_client.sh.in b/builds/posix/static_client.sh.in
+new file mode 100644
+index 0000000000..7960599ecf
+--- /dev/null
++++ b/builds/posix/static_client.sh.in
+@@ -0,0 +1,175 @@
++#!/bin/sh
++#
++#  The contents of this file are subject to the Initial
++#  Developer's Public License Version 1.0 (the "License");
++#  you may not use this file except in compliance with the
++#  License.  You may obtain a copy of the License at
++#  http://www.ibphoenix.com/main.nfs?a=ibphoenix&page=ibp_idpl.
++#
++#  Software distributed under the License is distributed AS IS,
++#  WITHOUT WARRANTY OF ANY KIND, either express or implied.
++#  See the License for the specific language governing rights
++#  and limitations under the License.
++#
++#  The Original Code was created by Firebird development team.
++#  for the Firebird Open Source RDBMS project.
++#
++#  Copyright (c) 2026 Adriano dos Santos Fernandes <adrianosf@gmail.com>
++#  and all contributors signed below.
++#
++#  All Rights Reserved.
++#  Contributor(s): ______________________________________.
++#
++#
++# Build helper for the static client library
++# (see builds/posix/Makefile.in, target client_static, recipe
++# $(LIBFIREBIRD_STATIC)).
++#
++# The makefile has already created <archive> with STATICLIB_LINK.
++# This script then:
++#   1. Parses the exported symbol names from the make-processed vers
++#      file (firebird.vers).
++#   2. "Slims" the archive: ld -r with -u for each exported symbol
++#      pulls in only the archive members transitively reachable from
++#      those seeds; the cross-reference output identifies which
++#      members were pulled in, and only those are repacked.
++#   3. Generates a comprehensive symbol rename map from every global
++#      defined in the slimmed archive that is NOT in the exported
++#      API list. Each such symbol gets a "__fbclient_" prefix.
++#   4. Applies the rename map with objcopy --redefine-syms.
++#
++# Step 2 uses a slim-mode-specific ld flag for the cross-reference:
++#   - elf:    GNU ld --cref (writes to stdout, redirected to $CREF)
++#   - darwin: Apple ld64 -Wl,-map (writes to $CREF directly)
++#
++# The seed input is the *make-processed* vers file
++# ($(GEN_ROOT)/firebird.vers, regenerated by the %.vers pattern
++# rule in Makefile.in via builds/posix/vers.sh.in). Its format
++# depends on the build platform:
++#   - Linux/FreeBSD/NetBSD (ELF): GNU version script:
++#         { global: \tgds__alloc; ... local: \t*; };
++#   - Darwin (Mach-O): one Mach-O symbol name per line:
++#         \t_gds__alloc
++#         \t_gds__attach_database
++#         ...
++# The parser below keeps lines that contain exactly one
++# identifier-shaped token (optionally ending with ';') and
++# strips a trailing semicolon, so it handles both formats.
++
++NM=@NM@
++LD=@CXX@
++AR=@AR@
++
++ARCHIVE=
++SEEDS_FILE=
++STAGE=
++CREF=
++PROBE=
++OBJCOPY_BIN=
++SLIM_MODE=elf
++
++usage() {
++	cat >&2 <<EOF
++Usage: static_client.sh
++   --archive            path to the static client archive (input/output)
++   --seeds-file         make-processed vers file with exported symbols
++                        (bare names on ELF, leading-underscore on Darwin)
++   --stage              scratch dir for extracted archive members
++   --cref               cross-reference table from the partial link
++   --probe              object produced by the partial link
++   --objcopy            objcopy-compatible binary used for --redefine-syms
++                        (GNU binutils' objcopy on ELF; llvm-objcopy on Darwin)
++   --slim-mode          elf | darwin  (default: elf)
++EOF
++	exit 1
++}
++
++while test $# -gt 0
++do
++	case "$1" in
++	--archive)            ARCHIVE="$2";            shift 2;;
++	--seeds-file)         SEEDS_FILE="$2";         shift 2;;
++	--stage)              STAGE="$2";              shift 2;;
++	--cref)               CREF="$2";               shift 2;;
++	--probe)              PROBE="$2";              shift 2;;
++	--objcopy)            OBJCOPY_BIN="$2";        shift 2;;
++	--slim-mode)          SLIM_MODE="$2";          shift 2;;
++	-h|--help)            usage;;
++	*)                    echo "static_client.sh: unknown option: $1" >&2; usage;;
++	esac
++done
++
++if test -z "$ARCHIVE" -o -z "$SEEDS_FILE" -o -z "$PROBE" -o -z "$OBJCOPY_BIN" \
++   -o -z "$STAGE" -o -z "$CREF"; then
++	usage
++fi
++
++case "$SLIM_MODE" in
++elf|darwin) ;;
++*) echo "static_client.sh: invalid --slim-mode '$SLIM_MODE' (expected elf or darwin)" >&2; exit 1;;
++esac
++
++set -eu
++
++# Step 1: Parse exported symbols from the make-processed vers file.
++# The awk pattern matches a single identifier-shaped token optionally
++# ending with ';', handles both ELF (gds__alloc;) and Darwin (_gds__alloc)
++# formats.
++SEEDS=$(awk 'NF==1 && $1 ~ /^[_A-Za-z][_A-Za-z0-9]*;?$/ { sub(/;$/,"",$1); print $1 }' \
++	"$SEEDS_FILE" | sort -u)
++
++# Step 2: Slim the archive. Partial link seeded with -u per exported
++# symbol identifies which archive members are transitively reachable.
++rm -rf "$STAGE" "$CREF" "$PROBE"
++
++SEED_FLAGS=$(printf -- '-u %s\n' $SEEDS)
++
++# slim-mode-specific ld flag for cross-reference output
++# shellcheck disable=SC2086
++if test "$SLIM_MODE" = darwin; then
++	$LD -r $SEED_FLAGS "$ARCHIVE" \
++		-o "$PROBE" -Wl,-map,"$CREF"
++else
++	$LD -r $SEED_FLAGS "$ARCHIVE" \
++		-o "$PROBE" -Wl,--cref > "$CREF" 2>/dev/null
++fi
++
++mkdir -p "$STAGE"
++(cd "$STAGE" && $AR x "$ARCHIVE")
++
++MEMBERS=$(sed -nE 's|.*libfbclient\.a\(([^)]+\.o)\).*|\1|p' \
++	"$CREF" | sort -u)
++if test -z "$MEMBERS"; then
++	echo "static client slim: no members pulled - aborting" >&2
++	exit 1
++fi
++
++rm -f "$ARCHIVE"
++(cd "$STAGE" && $AR crus "$ARCHIVE" $MEMBERS)
++
++rm -rf "$STAGE" "$CREF" "$PROBE"
++
++# Step 3: Generate a comprehensive rename map for every defined
++# global symbol in the slimmed archive that is NOT in the exported
++# API. Each such symbol gets a "__fbclient_" prefix so it won't
++# collide with the host application's own symbols (e.g. global
++# operator new/delete, decNumber symbols, internal C++ symbols).
++#
++# On ELF, nm emits bare C names (gds__alloc); on Mach-O it emits
++# leading-underscore names (_gds__alloc). Both conventions are
++# preserved correctly in the rename pairs because the seed list
++# parsed above matches the nm output convention on each platform.
++API_SYMS=$(mktemp)
++REDEFINE=$(mktemp)
++printf '%s\n' $SEEDS > "$API_SYMS"
++$NM --defined-only -g "$ARCHIVE" \
++	| awk 'NF==3 {print $3}' | sort -u \
++	| grep -F -v -x -f "$API_SYMS" \
++	| awk '{print $1, "__fbclient_" $1}' \
++	> "$REDEFINE"
++
++if test -s "$REDEFINE"; then
++	$OBJCOPY_BIN --redefine-syms="$REDEFINE" "$ARCHIVE"
++fi
++
++rm -f "$REDEFINE" "$API_SYMS"
+diff --git a/builds/win32/compile_static.bat b/builds/win32/compile_static.bat
+new file mode 100644
+index 0000000000..4bfd6a9376
+--- /dev/null
++++ b/builds/win32/compile_static.bat
+@@ -0,0 +1,60 @@
++:: The contents of this file are subject to the Initial
++:: Developer's Public License Version 1.0 (the "License");
++:: you may not use this file except in compliance with the
++:: License. You may obtain a copy of the License at
++:: http://www.ibphoenix.com/main.nfs?a=ibphoenix&page=ibp_idpl.
++::
++:: Software distributed under the License is distributed AS IS,
++:: WITHOUT WARRANTY OF ANY KIND, either express or implied.
++:: See the License for the specific language governing rights
++:: and limitations under the License.
++::
++:: The Original Code was created by Adriano dos Santos Fernandes
++:: for the Firebird Open Source RDBMS project.
++::
++:: Copyright (c) 2026 Adriano dos Santos Fernandes <adrianosf@gmail.com>
++:: and all contributors signed below.
++::
++:: All Rights Reserved.
++:: Contributor(s): ______________________________________.
++
++@echo off
++::==============
++:: compile_static.bat solution, output, [projects...]
++::
++::   Note: Our projects create object files in temp/$platform/$config
++::     but we call devenv with $config|$platform (note variable in reverse order
++::     and odd syntax).
++
++setlocal
++set solution=%1
++set output_path=%~dp2
++set output=%2
++set projects=
++
++@if "%FB_DBG%"=="" (
++	set config=releaseStatic
++) else (
++	set config=debugStatic
++)
++
++shift
++shift
++
++:loop_start
++
++if "%1" == "" goto loop_end
++
++set projects=%projects% /target:%1%FB_CLEAN%
++
++shift
++goto loop_start
++
++:loop_end
++
++if not exist "%output_path%" mkdir "%output_path%"
++msbuild "%FB_LONG_ROOT_PATH%\%solution%.sln" /maxcpucount /p:Configuration=%config% /p:Platform=%FB_TARGET_PLATFORM% %projects% /fileLoggerParameters:LogFile=%output%
++
++endlocal
++
++goto :EOF
+diff --git a/builds/win32/fix_fbclient_static.bat b/builds/win32/fix_fbclient_static.bat
+new file mode 100644
+index 0000000000..d4d01aebba
+--- /dev/null
++++ b/builds/win32/fix_fbclient_static.bat
+@@ -0,0 +1,235 @@
++:: The contents of this file are subject to the Initial
++:: Developer's Public License Version 1.0 (the "License");
++:: you may not use this file except in compliance with the
++:: License. You may obtain a copy of the License at
++:: http://www.ibphoenix.com/main.nfs?a=ibphoenix&page=ibp_idpl.
++::
++:: Software distributed under the License is distributed AS IS,
++:: WITHOUT WARRANTY OF ANY KIND, either express or implied.
++:: See the License for the specific language governing rights
++:: and limitations under the License.
++::
++:: The Original Code was created by Adriano dos Santos Fernandes
++:: for the Firebird Open Source RDBMS project.
++::
++:: Copyright (c) 2026 Adriano dos Santos Fernandes <adrianosf@gmail.com>
++:: and all contributors signed below.
++::
++:: All Rights Reserved.
++:: Contributor(s): ______________________________________.
++
++@echo off
++:: Rename every non-public global symbol in fbclient_static.lib so the
++:: static client does not override the host application's own symbols.
++::
++:: Mirrors the POSIX static_client.sh.in approach: generates a comprehensive
++:: rename map from llvm-nm output, filters out public API symbols from
++:: firebird.def, and renames everything else with a __fbclient_ prefix.
++::
++:: This covers global C++ operators, decNumber symbols, internal C++ symbols,
++:: and all other non-public definitions in one pass.
++::
++:: MSVC static libraries that pull in system import libs (e.g. ws2_32.lib
++:: via remote.vcxproj) embed short-import members that llvm-objcopy cannot
++:: process ("unsupported object file format"). So this script:
++::   1) extracts the archive
++::   2) builds a symbol rename map from every defined global not in the API
++::   3) runs llvm-objcopy on each real COFF .obj member
++::   4) rebuilds the archive from those objects only (import stubs dropped;
++::      the final application must still link ws2_32.lib / mpr.lib itself,
++::      same as the shared client import library requires)
++::
++:: Invoked from builds/win32/make_all.bat after the CLIENT_ONLY=STATIC build.
++:: See doc/README.StaticClient.md for the full rationale.
++::
++:: Usage: fix_fbclient_static.bat <path to fbclient_static.lib>
++
++setlocal EnableExtensions EnableDelayedExpansion
++
++if "%~1"=="" goto :usage
++
++set "LibPath=%~1"
++set "ScriptDir=%~dp0"
++set "DefFile=%ScriptDir%defs\firebird.def"
++set "WorkDir=%~dp1fix_fbclient_static_tmp"
++set "ExtractDir=%WorkDir%\extract"
++set "ApiSyms=%WorkDir%\api_syms.txt"
++set "NmOut=%WorkDir%\nm_out.txt"
++set "RenameMap=%WorkDir%\rename_map.txt"
++set "OutLib=%WorkDir%\fbclient_static_out.lib"
++
++if not exist "%LibPath%" (
++	echo fix_fbclient_static: library not found: %LibPath%
++	exit /b 1
++)
++if not exist "%DefFile%" (
++	echo fix_fbclient_static: firebird.def not found: %DefFile%
++	exit /b 1
++)
++
++if exist "%WorkDir%" rmdir /s /q "%WorkDir%"
++mkdir "%ExtractDir%"
++if errorlevel 1 (
++	echo fix_fbclient_static: cannot create temp dir: %ExtractDir%
++	exit /b 1
++)
++
++:: Extract archive
++echo Extracting %LibPath%...
++pushd "%ExtractDir%"
++llvm-ar x "%LibPath%"
++if errorlevel 1 (
++	echo fix_fbclient_static: llvm-ar extract failed with exit code %ERRORLEVEL%
++	popd
++	call :cleanup
++	exit /b 1
++)
++
++:: Step 1: Parse firebird.def for API symbols (undecorated names).
++:: For alias lines (sym=real), only the real name is retained since that is
++:: what appears in the object files (after x86 _-decoration stripping below).
++echo Building API symbol list from firebird.def...
++if exist "%ApiSyms%" del /f /q "%ApiSyms%"
++for /f "usebackq tokens=1 delims=	 " %%A in ("%DefFile%") do (
++	set "_line=%%A"
++	if not "!_line!"=="" (
++		if not "!_line:~0,1!"==";" (
++			if /I not "!_line!"=="EXPORTS" (
++				set "_entry="
++				for /f "tokens=2 delims==" %%X in ("!_line!") do (
++					if not "%%X"=="" set "_entry=%%X"
++				)
++				if not defined _entry set "_entry=!_line!"
++				>>"%ApiSyms%" echo !_entry!
++			)
++		)
++	)
++)
++
++:: Step 2: Run llvm-nm on each extracted object (not on the archive, to avoid
++:: archive-member prefix lines in the output) and collect all defined globals.
++echo Generating symbol rename map from defined globals...
++if exist "%NmOut%" del /f /q "%NmOut%"
++for %%F in ("*.obj") do (
++	llvm-nm --defined-only -g "%%~fF" >> "%NmOut%"
++)
++
++:: Step 3: Build rename map. For each defined global:
++::   - C++ mangled (?-prefixed): always rename (not an API symbol).
++::   - C symbols: strip leading _ (x86 __cdecl), optionally strip @n (x86
++::     __stdcall) for API matching; if not in API list, rename with prefix.
++:: The @n suffix (if any) is preserved in the renamed target so that the
++:: calling-convention encoding remains consistent on x86.
++set "RenameCount=0"
++if exist "%RenameMap%" del /f /q "%RenameMap%"
++for /f "usebackq tokens=1,2,3" %%A in ("%NmOut%") do (
++	if not "%%C"=="" (
++		set "orig=%%C"
++		call :process_symbol
++	)
++)
++
++if %RenameCount% EQU 0 (
++	echo fix_fbclient_static: no symbols to rename
++	popd
++	call :cleanup
++	exit /b 0
++)
++
++:: Deduplicate rename map (same symbol may appear in multiple objects)
++set "RenameSorted=%WorkDir%\rename_sorted.txt"
++sort /UNIQUE "%RenameMap%" /O "%RenameSorted%"
++move /y "%RenameSorted%" "%RenameMap%" >nul
++
++echo %RenameCount% symbols will be renamed.
++
++:: Step 4: Apply rename map to each object
++echo Renaming symbols in object members...
++set "ObjCount=0"
++set "FailCount=0"
++for %%F in ("*.obj") do (
++	llvm-objcopy --redefine-syms="%RenameMap%" "%%~fF"
++	if errorlevel 1 (
++		echo fix_fbclient_static: llvm-objcopy failed on %%F
++		set /a FailCount+=1
++	) else (
++		set /a ObjCount+=1
++	)
++)
++
++if !FailCount! NEQ 0 (
++	echo fix_fbclient_static: !FailCount! object^(s^) failed redefine
++	popd
++	call :cleanup
++	exit /b 1
++)
++if !ObjCount! EQU 0 (
++	echo fix_fbclient_static: no .obj members found in %LibPath%
++	popd
++	call :cleanup
++	exit /b 1
++)
++
++:: Step 5: Rebuild archive from (now-renamed) objects only
++echo Rebuilding static library from !ObjCount! object^(s^)...
++if exist "%OutLib%" del /f /q "%OutLib%"
++llvm-ar rcs "%OutLib%" *.obj
++if errorlevel 1 (
++	echo fix_fbclient_static: llvm-ar rebuild failed with exit code %ERRORLEVEL%
++	popd
++	call :cleanup
++	exit /b 1
++)
++popd
++
++copy /y "%OutLib%" "%LibPath%" >nul
++if errorlevel 1 (
++	echo fix_fbclient_static: failed to replace %LibPath%
++	call :cleanup
++	exit /b 1
++)
++
++echo fix_fbclient_static: updated %LibPath% (%RenameCount% symbols renamed)
++call :cleanup
++exit /b 0
++
++:usage
++echo Usage: %~nx0 ^<path to fbclient_static.lib^>
++exit /b 1
++
++:cleanup
++if exist "%WorkDir%" rmdir /s /q "%WorkDir%"
++goto :eof
++
++:: -------------------------------------------------------------------
++:: Process a single symbol from the nm output (orig set by caller).
++:: -------------------------------------------------------------------
++:process_symbol
++set "bare=!orig!"
++
++:: C++ mangled (?-prefixed) -- always rename, never an API symbol
++if "!bare:~0,1!"=="?" (
++	>>"%RenameMap%" echo !orig! __fbclient_!orig!
++	set /a RenameCount+=1
++	goto :eof
++)
++
++:: Strip leading underscores (x86 __cdecl name decoration)
++for /l %%I in (1,1,32) do (
++	if not "!bare!"=="" if "!bare:~0,1!"=="_" set "bare=!bare:~1!"
++)
++
++:: Strip @n suffix (x86 __stdcall / __fastcall decoration) for API matching
++set "check=!bare!"
++for /f "tokens=1 delims=@" %%S in ("!check!") do set "check=%%S"
++
++:: API symbol check (undecorated name against firebird.def entries)
++findstr /X /I /L "!check!" "%ApiSyms%" >nul 2>&1
++if not errorlevel 1 goto :eof
++
++:: Not an API symbol -- rename with __fbclient_ prefix.
++:: The bare name (with @n preserved if present) is used as the new-symbol
++:: suffix so that x86 __stdcall linkage is not broken.
++>>"%RenameMap%" echo !orig! __fbclient_!bare!
++set /a RenameCount+=1
++goto :eof
+diff --git a/builds/win32/make_all.bat b/builds/win32/make_all.bat
+index ebeb3910dd..6792a42aa8 100644
+--- a/builds/win32/make_all.bat
++++ b/builds/win32/make_all.bat
+@@ -18,10 +18,21 @@ set ERRLEV=0
+ 
+ @if "%FB_CLIENT_ONLY%"=="" (
+ 	call compile.bat builds\win32\%VS_VER%\Firebird make_all_%FB_TARGET_PLATFORM%.log
++	if errorlevel 1 call :ERROR build failed - see make_all_%FB_TARGET_PLATFORM%.log for details
+ ) else (
+-	call compile.bat builds\win32\%VS_VER%\Firebird make_all_%FB_TARGET_PLATFORM%.log DLLs\yvalve DLLs\chacha
++	@if /I "%FB_CLIENT_ONLY%"=="STATIC" (
++		@if exist "%FB_ROOT_PATH%\temp\%FB_STATIC_OBJ_DIR%\yvalve\fbclient_static.lib" del /f /q "%FB_ROOT_PATH%\temp\%FB_STATIC_OBJ_DIR%\yvalve\fbclient_static.lib"
++		call compile_static.bat builds\win32\%VS_VER%\Firebird make_all_%FB_TARGET_PLATFORM%_static.log DLLs\yvalve
++		if errorlevel 1 call :ERROR build failed - see make_all_%FB_TARGET_PLATFORM%_static.log for details
++		if not "%ERRLEV%"=="1" (
++			call "%FB_ROOT_PATH%\builds\win32\fix_fbclient_static.bat" "%FB_ROOT_PATH%\temp\%FB_STATIC_OBJ_DIR%\yvalve\fbclient_static.lib"
++			if errorlevel 1 call :ERROR fix_fbclient_static.bat failed
++		)
++	) else (
++		call compile.bat builds\win32\%VS_VER%\Firebird make_all_%FB_TARGET_PLATFORM%.log DLLs\yvalve DLLs\chacha
++		if errorlevel 1 call :ERROR build failed - see make_all_%FB_TARGET_PLATFORM%.log for details
++	)
+ )
+-if errorlevel 1 call :ERROR build failed - see make_all_%FB_TARGET_PLATFORM%.log for details
+ 
+ @if "%ERRLEV%"=="1" (
+   @goto :EOF
+@@ -60,6 +71,10 @@ if errorlevel 1 call :ERROR build failed - see make_all_%FB_TARGET_PLATFORM%.log
+ @copy %FB_ROOT_PATH%\temp\%FB_OBJ_DIR%\firebird\plugins\*.dll %FB_OUTPUT_DIR%\plugins >nul
+ @copy %FB_ROOT_PATH%\temp\%FB_OBJ_DIR%\yvalve\fbclient.lib %FB_OUTPUT_DIR%\lib\fbclient_ms.lib >nul
+ 
++@if /I "%FB_CLIENT_ONLY%"=="STATIC" (
++	@copy %FB_ROOT_PATH%\temp\%FB_STATIC_OBJ_DIR%\yvalve\fbclient_static.lib %FB_OUTPUT_DIR%\lib\fbclient_static_ms.lib >nul
++)
++
+ @if "%FB_CLIENT_ONLY%"=="" (
+ 	copy %FB_ROOT_PATH%\temp\%FB_OBJ_DIR%\firebird\intl\* %FB_OUTPUT_DIR%\intl >nul
+ 	copy %FB_ROOT_PATH%\temp\%FB_OBJ_DIR%\firebird\plugins\udr\*.dll %FB_OUTPUT_DIR%\plugins\udr >nul
+diff --git a/builds/win32/msvc15/Firebird.sln b/builds/win32/msvc15/Firebird.sln
+index 4293fbe7bd..8c7ae357e9 100644
+--- a/builds/win32/msvc15/Firebird.sln
++++ b/builds/win32/msvc15/Firebird.sln
+@@ -102,304 +102,468 @@ Global
+ 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+ 		Debug|Win32 = Debug|Win32
+ 		Debug|x64 = Debug|x64
++		DebugStatic|Win32 = DebugStatic|Win32
++		DebugStatic|x64 = DebugStatic|x64
+ 		Release|Win32 = Release|Win32
+ 		Release|x64 = Release|x64
++		ReleaseStatic|Win32 = ReleaseStatic|Win32
++		ReleaseStatic|x64 = ReleaseStatic|x64
+ 	EndGlobalSection
+ 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+ 		{0D616380-1A5A-4230-A80B-021360E4E669}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{0D616380-1A5A-4230-A80B-021360E4E669}.Debug|Win32.Build.0 = Debug|Win32
+ 		{0D616380-1A5A-4230-A80B-021360E4E669}.Debug|x64.ActiveCfg = Debug|x64
+ 		{0D616380-1A5A-4230-A80B-021360E4E669}.Debug|x64.Build.0 = Debug|x64
++		{0D616380-1A5A-4230-A80B-021360E4E669}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{0D616380-1A5A-4230-A80B-021360E4E669}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{0D616380-1A5A-4230-A80B-021360E4E669}.Release|Win32.ActiveCfg = Release|Win32
+ 		{0D616380-1A5A-4230-A80B-021360E4E669}.Release|Win32.Build.0 = Release|Win32
+ 		{0D616380-1A5A-4230-A80B-021360E4E669}.Release|x64.ActiveCfg = Release|x64
+ 		{0D616380-1A5A-4230-A80B-021360E4E669}.Release|x64.Build.0 = Release|x64
++		{0D616380-1A5A-4230-A80B-021360E4E669}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{0D616380-1A5A-4230-A80B-021360E4E669}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{D1507562-A363-4685-96AF-B036F5E5E47F}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{D1507562-A363-4685-96AF-B036F5E5E47F}.Debug|Win32.Build.0 = Debug|Win32
+ 		{D1507562-A363-4685-96AF-B036F5E5E47F}.Debug|x64.ActiveCfg = Debug|x64
+ 		{D1507562-A363-4685-96AF-B036F5E5E47F}.Debug|x64.Build.0 = Debug|x64
++		{D1507562-A363-4685-96AF-B036F5E5E47F}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{D1507562-A363-4685-96AF-B036F5E5E47F}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{D1507562-A363-4685-96AF-B036F5E5E47F}.Release|Win32.ActiveCfg = Release|Win32
+ 		{D1507562-A363-4685-96AF-B036F5E5E47F}.Release|Win32.Build.0 = Release|Win32
+ 		{D1507562-A363-4685-96AF-B036F5E5E47F}.Release|x64.ActiveCfg = Release|x64
+ 		{D1507562-A363-4685-96AF-B036F5E5E47F}.Release|x64.Build.0 = Release|x64
++		{D1507562-A363-4685-96AF-B036F5E5E47F}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{D1507562-A363-4685-96AF-B036F5E5E47F}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{15605F44-BFFD-444F-AD4C-55DC9D704465}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{15605F44-BFFD-444F-AD4C-55DC9D704465}.Debug|Win32.Build.0 = Debug|Win32
+ 		{15605F44-BFFD-444F-AD4C-55DC9D704465}.Debug|x64.ActiveCfg = Debug|x64
+ 		{15605F44-BFFD-444F-AD4C-55DC9D704465}.Debug|x64.Build.0 = Debug|x64
++		{15605F44-BFFD-444F-AD4C-55DC9D704465}.DebugStatic|Win32.ActiveCfg = DebugStatic|Win32
++		{15605F44-BFFD-444F-AD4C-55DC9D704465}.DebugStatic|Win32.Build.0 = DebugStatic|Win32
++		{15605F44-BFFD-444F-AD4C-55DC9D704465}.DebugStatic|x64.ActiveCfg = DebugStatic|x64
++		{15605F44-BFFD-444F-AD4C-55DC9D704465}.DebugStatic|x64.Build.0 = DebugStatic|x64
+ 		{15605F44-BFFD-444F-AD4C-55DC9D704465}.Release|Win32.ActiveCfg = Release|Win32
+ 		{15605F44-BFFD-444F-AD4C-55DC9D704465}.Release|Win32.Build.0 = Release|Win32
+ 		{15605F44-BFFD-444F-AD4C-55DC9D704465}.Release|x64.ActiveCfg = Release|x64
+ 		{15605F44-BFFD-444F-AD4C-55DC9D704465}.Release|x64.Build.0 = Release|x64
++		{15605F44-BFFD-444F-AD4C-55DC9D704465}.ReleaseStatic|Win32.ActiveCfg = ReleaseStatic|Win32
++		{15605F44-BFFD-444F-AD4C-55DC9D704465}.ReleaseStatic|Win32.Build.0 = ReleaseStatic|Win32
++		{15605F44-BFFD-444F-AD4C-55DC9D704465}.ReleaseStatic|x64.ActiveCfg = ReleaseStatic|x64
++		{15605F44-BFFD-444F-AD4C-55DC9D704465}.ReleaseStatic|x64.Build.0 = ReleaseStatic|x64
+ 		{F8798A49-9D20-451E-A7BD-FEB5237103B5}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{F8798A49-9D20-451E-A7BD-FEB5237103B5}.Debug|Win32.Build.0 = Debug|Win32
+ 		{F8798A49-9D20-451E-A7BD-FEB5237103B5}.Debug|x64.ActiveCfg = Debug|x64
+ 		{F8798A49-9D20-451E-A7BD-FEB5237103B5}.Debug|x64.Build.0 = Debug|x64
++		{F8798A49-9D20-451E-A7BD-FEB5237103B5}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{F8798A49-9D20-451E-A7BD-FEB5237103B5}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{F8798A49-9D20-451E-A7BD-FEB5237103B5}.Release|Win32.ActiveCfg = Release|Win32
+ 		{F8798A49-9D20-451E-A7BD-FEB5237103B5}.Release|Win32.Build.0 = Release|Win32
+ 		{F8798A49-9D20-451E-A7BD-FEB5237103B5}.Release|x64.ActiveCfg = Release|x64
+ 		{F8798A49-9D20-451E-A7BD-FEB5237103B5}.Release|x64.Build.0 = Release|x64
++		{F8798A49-9D20-451E-A7BD-FEB5237103B5}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{F8798A49-9D20-451E-A7BD-FEB5237103B5}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{E8397148-0E9C-449B-9F45-7FB377A08242}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{E8397148-0E9C-449B-9F45-7FB377A08242}.Debug|Win32.Build.0 = Debug|Win32
+ 		{E8397148-0E9C-449B-9F45-7FB377A08242}.Debug|x64.ActiveCfg = Debug|x64
+ 		{E8397148-0E9C-449B-9F45-7FB377A08242}.Debug|x64.Build.0 = Debug|x64
++		{E8397148-0E9C-449B-9F45-7FB377A08242}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{E8397148-0E9C-449B-9F45-7FB377A08242}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{E8397148-0E9C-449B-9F45-7FB377A08242}.Release|Win32.ActiveCfg = Release|Win32
+ 		{E8397148-0E9C-449B-9F45-7FB377A08242}.Release|Win32.Build.0 = Release|Win32
+ 		{E8397148-0E9C-449B-9F45-7FB377A08242}.Release|x64.ActiveCfg = Release|x64
+ 		{E8397148-0E9C-449B-9F45-7FB377A08242}.Release|x64.Build.0 = Release|x64
++		{E8397148-0E9C-449B-9F45-7FB377A08242}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{E8397148-0E9C-449B-9F45-7FB377A08242}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{BBD83ED3-8A48-4FE8-B4B7-CB27730986B2}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{BBD83ED3-8A48-4FE8-B4B7-CB27730986B2}.Debug|Win32.Build.0 = Debug|Win32
+ 		{BBD83ED3-8A48-4FE8-B4B7-CB27730986B2}.Debug|x64.ActiveCfg = Debug|x64
+ 		{BBD83ED3-8A48-4FE8-B4B7-CB27730986B2}.Debug|x64.Build.0 = Debug|x64
++		{BBD83ED3-8A48-4FE8-B4B7-CB27730986B2}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{BBD83ED3-8A48-4FE8-B4B7-CB27730986B2}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{BBD83ED3-8A48-4FE8-B4B7-CB27730986B2}.Release|Win32.ActiveCfg = Release|Win32
+ 		{BBD83ED3-8A48-4FE8-B4B7-CB27730986B2}.Release|Win32.Build.0 = Release|Win32
+ 		{BBD83ED3-8A48-4FE8-B4B7-CB27730986B2}.Release|x64.ActiveCfg = Release|x64
+ 		{BBD83ED3-8A48-4FE8-B4B7-CB27730986B2}.Release|x64.Build.0 = Release|x64
++		{BBD83ED3-8A48-4FE8-B4B7-CB27730986B2}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{BBD83ED3-8A48-4FE8-B4B7-CB27730986B2}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{23EC8DAA-6718-4EF3-979F-89F611C7D504}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{23EC8DAA-6718-4EF3-979F-89F611C7D504}.Debug|Win32.Build.0 = Debug|Win32
+ 		{23EC8DAA-6718-4EF3-979F-89F611C7D504}.Debug|x64.ActiveCfg = Debug|x64
+ 		{23EC8DAA-6718-4EF3-979F-89F611C7D504}.Debug|x64.Build.0 = Debug|x64
++		{23EC8DAA-6718-4EF3-979F-89F611C7D504}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{23EC8DAA-6718-4EF3-979F-89F611C7D504}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{23EC8DAA-6718-4EF3-979F-89F611C7D504}.Release|Win32.ActiveCfg = Release|Win32
+ 		{23EC8DAA-6718-4EF3-979F-89F611C7D504}.Release|Win32.Build.0 = Release|Win32
+ 		{23EC8DAA-6718-4EF3-979F-89F611C7D504}.Release|x64.ActiveCfg = Release|x64
+ 		{23EC8DAA-6718-4EF3-979F-89F611C7D504}.Release|x64.Build.0 = Release|x64
++		{23EC8DAA-6718-4EF3-979F-89F611C7D504}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{23EC8DAA-6718-4EF3-979F-89F611C7D504}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{B732F5D2-B5D9-417F-B156-D790F466CB8E}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{B732F5D2-B5D9-417F-B156-D790F466CB8E}.Debug|Win32.Build.0 = Debug|Win32
+ 		{B732F5D2-B5D9-417F-B156-D790F466CB8E}.Debug|x64.ActiveCfg = Debug|x64
+ 		{B732F5D2-B5D9-417F-B156-D790F466CB8E}.Debug|x64.Build.0 = Debug|x64
++		{B732F5D2-B5D9-417F-B156-D790F466CB8E}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{B732F5D2-B5D9-417F-B156-D790F466CB8E}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{B732F5D2-B5D9-417F-B156-D790F466CB8E}.Release|Win32.ActiveCfg = Release|Win32
+ 		{B732F5D2-B5D9-417F-B156-D790F466CB8E}.Release|Win32.Build.0 = Release|Win32
+ 		{B732F5D2-B5D9-417F-B156-D790F466CB8E}.Release|x64.ActiveCfg = Release|x64
+ 		{B732F5D2-B5D9-417F-B156-D790F466CB8E}.Release|x64.Build.0 = Release|x64
++		{B732F5D2-B5D9-417F-B156-D790F466CB8E}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{B732F5D2-B5D9-417F-B156-D790F466CB8E}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{44A9E4AD-B932-4620-B319-431A153BB341}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{44A9E4AD-B932-4620-B319-431A153BB341}.Debug|Win32.Build.0 = Debug|Win32
+ 		{44A9E4AD-B932-4620-B319-431A153BB341}.Debug|x64.ActiveCfg = Debug|x64
+ 		{44A9E4AD-B932-4620-B319-431A153BB341}.Debug|x64.Build.0 = Debug|x64
++		{44A9E4AD-B932-4620-B319-431A153BB341}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{44A9E4AD-B932-4620-B319-431A153BB341}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{44A9E4AD-B932-4620-B319-431A153BB341}.Release|Win32.ActiveCfg = Release|Win32
+ 		{44A9E4AD-B932-4620-B319-431A153BB341}.Release|Win32.Build.0 = Release|Win32
+ 		{44A9E4AD-B932-4620-B319-431A153BB341}.Release|x64.ActiveCfg = Release|x64
+ 		{44A9E4AD-B932-4620-B319-431A153BB341}.Release|x64.Build.0 = Release|x64
++		{44A9E4AD-B932-4620-B319-431A153BB341}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{44A9E4AD-B932-4620-B319-431A153BB341}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{D84F0839-28A4-40B2-B5F4-F5E1E7F48FD0}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{D84F0839-28A4-40B2-B5F4-F5E1E7F48FD0}.Debug|Win32.Build.0 = Debug|Win32
+ 		{D84F0839-28A4-40B2-B5F4-F5E1E7F48FD0}.Debug|x64.ActiveCfg = Debug|x64
+ 		{D84F0839-28A4-40B2-B5F4-F5E1E7F48FD0}.Debug|x64.Build.0 = Debug|x64
++		{D84F0839-28A4-40B2-B5F4-F5E1E7F48FD0}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{D84F0839-28A4-40B2-B5F4-F5E1E7F48FD0}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{D84F0839-28A4-40B2-B5F4-F5E1E7F48FD0}.Release|Win32.ActiveCfg = Release|Win32
+ 		{D84F0839-28A4-40B2-B5F4-F5E1E7F48FD0}.Release|Win32.Build.0 = Release|Win32
+ 		{D84F0839-28A4-40B2-B5F4-F5E1E7F48FD0}.Release|x64.ActiveCfg = Release|x64
+ 		{D84F0839-28A4-40B2-B5F4-F5E1E7F48FD0}.Release|x64.Build.0 = Release|x64
++		{D84F0839-28A4-40B2-B5F4-F5E1E7F48FD0}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{D84F0839-28A4-40B2-B5F4-F5E1E7F48FD0}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{7043CC61-DEC1-4C6B-86B9-0E911D1094C9}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{7043CC61-DEC1-4C6B-86B9-0E911D1094C9}.Debug|Win32.Build.0 = Debug|Win32
+ 		{7043CC61-DEC1-4C6B-86B9-0E911D1094C9}.Debug|x64.ActiveCfg = Debug|x64
+ 		{7043CC61-DEC1-4C6B-86B9-0E911D1094C9}.Debug|x64.Build.0 = Debug|x64
++		{7043CC61-DEC1-4C6B-86B9-0E911D1094C9}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{7043CC61-DEC1-4C6B-86B9-0E911D1094C9}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{7043CC61-DEC1-4C6B-86B9-0E911D1094C9}.Release|Win32.ActiveCfg = Release|Win32
+ 		{7043CC61-DEC1-4C6B-86B9-0E911D1094C9}.Release|Win32.Build.0 = Release|Win32
+ 		{7043CC61-DEC1-4C6B-86B9-0E911D1094C9}.Release|x64.ActiveCfg = Release|x64
+ 		{7043CC61-DEC1-4C6B-86B9-0E911D1094C9}.Release|x64.Build.0 = Release|x64
++		{7043CC61-DEC1-4C6B-86B9-0E911D1094C9}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{7043CC61-DEC1-4C6B-86B9-0E911D1094C9}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{B7F22B7F-9937-4874-9A8B-6AB4E36E74A5}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{B7F22B7F-9937-4874-9A8B-6AB4E36E74A5}.Debug|Win32.Build.0 = Debug|Win32
+ 		{B7F22B7F-9937-4874-9A8B-6AB4E36E74A5}.Debug|x64.ActiveCfg = Debug|x64
+ 		{B7F22B7F-9937-4874-9A8B-6AB4E36E74A5}.Debug|x64.Build.0 = Debug|x64
++		{B7F22B7F-9937-4874-9A8B-6AB4E36E74A5}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{B7F22B7F-9937-4874-9A8B-6AB4E36E74A5}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{B7F22B7F-9937-4874-9A8B-6AB4E36E74A5}.Release|Win32.ActiveCfg = Release|Win32
+ 		{B7F22B7F-9937-4874-9A8B-6AB4E36E74A5}.Release|Win32.Build.0 = Release|Win32
+ 		{B7F22B7F-9937-4874-9A8B-6AB4E36E74A5}.Release|x64.ActiveCfg = Release|x64
+ 		{B7F22B7F-9937-4874-9A8B-6AB4E36E74A5}.Release|x64.Build.0 = Release|x64
++		{B7F22B7F-9937-4874-9A8B-6AB4E36E74A5}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{B7F22B7F-9937-4874-9A8B-6AB4E36E74A5}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{7E862973-37C4-4202-80E7-490ED4DEDA14}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{7E862973-37C4-4202-80E7-490ED4DEDA14}.Debug|Win32.Build.0 = Debug|Win32
+ 		{7E862973-37C4-4202-80E7-490ED4DEDA14}.Debug|x64.ActiveCfg = Debug|x64
+ 		{7E862973-37C4-4202-80E7-490ED4DEDA14}.Debug|x64.Build.0 = Debug|x64
++		{7E862973-37C4-4202-80E7-490ED4DEDA14}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{7E862973-37C4-4202-80E7-490ED4DEDA14}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{7E862973-37C4-4202-80E7-490ED4DEDA14}.Release|Win32.ActiveCfg = Release|Win32
+ 		{7E862973-37C4-4202-80E7-490ED4DEDA14}.Release|Win32.Build.0 = Release|Win32
+ 		{7E862973-37C4-4202-80E7-490ED4DEDA14}.Release|x64.ActiveCfg = Release|x64
+ 		{7E862973-37C4-4202-80E7-490ED4DEDA14}.Release|x64.Build.0 = Release|x64
++		{7E862973-37C4-4202-80E7-490ED4DEDA14}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{7E862973-37C4-4202-80E7-490ED4DEDA14}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{EABA0FF3-1C4D-4FAB-8418-31C9061F3F0D}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{EABA0FF3-1C4D-4FAB-8418-31C9061F3F0D}.Debug|Win32.Build.0 = Debug|Win32
+ 		{EABA0FF3-1C4D-4FAB-8418-31C9061F3F0D}.Debug|x64.ActiveCfg = Debug|x64
+ 		{EABA0FF3-1C4D-4FAB-8418-31C9061F3F0D}.Debug|x64.Build.0 = Debug|x64
++		{EABA0FF3-1C4D-4FAB-8418-31C9061F3F0D}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{EABA0FF3-1C4D-4FAB-8418-31C9061F3F0D}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{EABA0FF3-1C4D-4FAB-8418-31C9061F3F0D}.Release|Win32.ActiveCfg = Release|Win32
+ 		{EABA0FF3-1C4D-4FAB-8418-31C9061F3F0D}.Release|Win32.Build.0 = Release|Win32
+ 		{EABA0FF3-1C4D-4FAB-8418-31C9061F3F0D}.Release|x64.ActiveCfg = Release|x64
+ 		{EABA0FF3-1C4D-4FAB-8418-31C9061F3F0D}.Release|x64.Build.0 = Release|x64
++		{EABA0FF3-1C4D-4FAB-8418-31C9061F3F0D}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{EABA0FF3-1C4D-4FAB-8418-31C9061F3F0D}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{19470DE6-1975-4F9B-B1BE-E87A83240B15}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{19470DE6-1975-4F9B-B1BE-E87A83240B15}.Debug|Win32.Build.0 = Debug|Win32
+ 		{19470DE6-1975-4F9B-B1BE-E87A83240B15}.Debug|x64.ActiveCfg = Debug|x64
+ 		{19470DE6-1975-4F9B-B1BE-E87A83240B15}.Debug|x64.Build.0 = Debug|x64
++		{19470DE6-1975-4F9B-B1BE-E87A83240B15}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{19470DE6-1975-4F9B-B1BE-E87A83240B15}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{19470DE6-1975-4F9B-B1BE-E87A83240B15}.Release|Win32.ActiveCfg = Release|Win32
+ 		{19470DE6-1975-4F9B-B1BE-E87A83240B15}.Release|Win32.Build.0 = Release|Win32
+ 		{19470DE6-1975-4F9B-B1BE-E87A83240B15}.Release|x64.ActiveCfg = Release|x64
+ 		{19470DE6-1975-4F9B-B1BE-E87A83240B15}.Release|x64.Build.0 = Release|x64
++		{19470DE6-1975-4F9B-B1BE-E87A83240B15}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{19470DE6-1975-4F9B-B1BE-E87A83240B15}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{72894398-38CA-47A6-95FE-9647DE2BE968}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{72894398-38CA-47A6-95FE-9647DE2BE968}.Debug|Win32.Build.0 = Debug|Win32
+ 		{72894398-38CA-47A6-95FE-9647DE2BE968}.Debug|x64.ActiveCfg = Debug|x64
+ 		{72894398-38CA-47A6-95FE-9647DE2BE968}.Debug|x64.Build.0 = Debug|x64
++		{72894398-38CA-47A6-95FE-9647DE2BE968}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{72894398-38CA-47A6-95FE-9647DE2BE968}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{72894398-38CA-47A6-95FE-9647DE2BE968}.Release|Win32.ActiveCfg = Release|Win32
+ 		{72894398-38CA-47A6-95FE-9647DE2BE968}.Release|Win32.Build.0 = Release|Win32
+ 		{72894398-38CA-47A6-95FE-9647DE2BE968}.Release|x64.ActiveCfg = Release|x64
+ 		{72894398-38CA-47A6-95FE-9647DE2BE968}.Release|x64.Build.0 = Release|x64
++		{72894398-38CA-47A6-95FE-9647DE2BE968}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{72894398-38CA-47A6-95FE-9647DE2BE968}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{DFFA2117-E6A8-4806-BB69-94DAC8F8F42A}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{DFFA2117-E6A8-4806-BB69-94DAC8F8F42A}.Debug|Win32.Build.0 = Debug|Win32
+ 		{DFFA2117-E6A8-4806-BB69-94DAC8F8F42A}.Debug|x64.ActiveCfg = Debug|x64
+ 		{DFFA2117-E6A8-4806-BB69-94DAC8F8F42A}.Debug|x64.Build.0 = Debug|x64
++		{DFFA2117-E6A8-4806-BB69-94DAC8F8F42A}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{DFFA2117-E6A8-4806-BB69-94DAC8F8F42A}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{DFFA2117-E6A8-4806-BB69-94DAC8F8F42A}.Release|Win32.ActiveCfg = Release|Win32
+ 		{DFFA2117-E6A8-4806-BB69-94DAC8F8F42A}.Release|Win32.Build.0 = Release|Win32
+ 		{DFFA2117-E6A8-4806-BB69-94DAC8F8F42A}.Release|x64.ActiveCfg = Release|x64
+ 		{DFFA2117-E6A8-4806-BB69-94DAC8F8F42A}.Release|x64.Build.0 = Release|x64
++		{DFFA2117-E6A8-4806-BB69-94DAC8F8F42A}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{DFFA2117-E6A8-4806-BB69-94DAC8F8F42A}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{DEE75AD5-F165-40E1-80B2-400E27725D5C}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{DEE75AD5-F165-40E1-80B2-400E27725D5C}.Debug|Win32.Build.0 = Debug|Win32
+ 		{DEE75AD5-F165-40E1-80B2-400E27725D5C}.Debug|x64.ActiveCfg = Debug|x64
+ 		{DEE75AD5-F165-40E1-80B2-400E27725D5C}.Debug|x64.Build.0 = Debug|x64
++		{DEE75AD5-F165-40E1-80B2-400E27725D5C}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{DEE75AD5-F165-40E1-80B2-400E27725D5C}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{DEE75AD5-F165-40E1-80B2-400E27725D5C}.Release|Win32.ActiveCfg = Release|Win32
+ 		{DEE75AD5-F165-40E1-80B2-400E27725D5C}.Release|Win32.Build.0 = Release|Win32
+ 		{DEE75AD5-F165-40E1-80B2-400E27725D5C}.Release|x64.ActiveCfg = Release|x64
+ 		{DEE75AD5-F165-40E1-80B2-400E27725D5C}.Release|x64.Build.0 = Release|x64
++		{DEE75AD5-F165-40E1-80B2-400E27725D5C}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{DEE75AD5-F165-40E1-80B2-400E27725D5C}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{4BCC693D-1745-45ED-8302-E5E2F979549A}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{4BCC693D-1745-45ED-8302-E5E2F979549A}.Debug|Win32.Build.0 = Debug|Win32
+ 		{4BCC693D-1745-45ED-8302-E5E2F979549A}.Debug|x64.ActiveCfg = Debug|x64
+ 		{4BCC693D-1745-45ED-8302-E5E2F979549A}.Debug|x64.Build.0 = Debug|x64
++		{4BCC693D-1745-45ED-8302-E5E2F979549A}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{4BCC693D-1745-45ED-8302-E5E2F979549A}.DebugStatic|Win32.Build.0 = Debug|Win32
++		{4BCC693D-1745-45ED-8302-E5E2F979549A}.DebugStatic|x64.ActiveCfg = Debug|x64
++		{4BCC693D-1745-45ED-8302-E5E2F979549A}.DebugStatic|x64.Build.0 = Debug|x64
+ 		{4BCC693D-1745-45ED-8302-E5E2F979549A}.Release|Win32.ActiveCfg = Release|Win32
+ 		{4BCC693D-1745-45ED-8302-E5E2F979549A}.Release|Win32.Build.0 = Release|Win32
+ 		{4BCC693D-1745-45ED-8302-E5E2F979549A}.Release|x64.ActiveCfg = Release|x64
+ 		{4BCC693D-1745-45ED-8302-E5E2F979549A}.Release|x64.Build.0 = Release|x64
++		{4BCC693D-1745-45ED-8302-E5E2F979549A}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{4BCC693D-1745-45ED-8302-E5E2F979549A}.ReleaseStatic|Win32.Build.0 = Release|Win32
++		{4BCC693D-1745-45ED-8302-E5E2F979549A}.ReleaseStatic|x64.ActiveCfg = Release|x64
++		{4BCC693D-1745-45ED-8302-E5E2F979549A}.ReleaseStatic|x64.Build.0 = Release|x64
+ 		{01A41DFA-8908-4576-A1F1-C8BC7EAE39A1}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{01A41DFA-8908-4576-A1F1-C8BC7EAE39A1}.Debug|Win32.Build.0 = Debug|Win32
+ 		{01A41DFA-8908-4576-A1F1-C8BC7EAE39A1}.Debug|x64.ActiveCfg = Debug|x64
+ 		{01A41DFA-8908-4576-A1F1-C8BC7EAE39A1}.Debug|x64.Build.0 = Debug|x64
++		{01A41DFA-8908-4576-A1F1-C8BC7EAE39A1}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{01A41DFA-8908-4576-A1F1-C8BC7EAE39A1}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{01A41DFA-8908-4576-A1F1-C8BC7EAE39A1}.Release|Win32.ActiveCfg = Release|Win32
+ 		{01A41DFA-8908-4576-A1F1-C8BC7EAE39A1}.Release|Win32.Build.0 = Release|Win32
+ 		{01A41DFA-8908-4576-A1F1-C8BC7EAE39A1}.Release|x64.ActiveCfg = Release|x64
+ 		{01A41DFA-8908-4576-A1F1-C8BC7EAE39A1}.Release|x64.Build.0 = Release|x64
++		{01A41DFA-8908-4576-A1F1-C8BC7EAE39A1}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{01A41DFA-8908-4576-A1F1-C8BC7EAE39A1}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{C6A31374-178C-4680-A404-76BE24D0229B}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{C6A31374-178C-4680-A404-76BE24D0229B}.Debug|Win32.Build.0 = Debug|Win32
+ 		{C6A31374-178C-4680-A404-76BE24D0229B}.Debug|x64.ActiveCfg = Debug|x64
+ 		{C6A31374-178C-4680-A404-76BE24D0229B}.Debug|x64.Build.0 = Debug|x64
++		{C6A31374-178C-4680-A404-76BE24D0229B}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{C6A31374-178C-4680-A404-76BE24D0229B}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{C6A31374-178C-4680-A404-76BE24D0229B}.Release|Win32.ActiveCfg = Release|Win32
+ 		{C6A31374-178C-4680-A404-76BE24D0229B}.Release|Win32.Build.0 = Release|Win32
+ 		{C6A31374-178C-4680-A404-76BE24D0229B}.Release|x64.ActiveCfg = Release|x64
+ 		{C6A31374-178C-4680-A404-76BE24D0229B}.Release|x64.Build.0 = Release|x64
++		{C6A31374-178C-4680-A404-76BE24D0229B}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{C6A31374-178C-4680-A404-76BE24D0229B}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{FAF9AD25-8238-49E9-9AC9-8C56E190440A}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{FAF9AD25-8238-49E9-9AC9-8C56E190440A}.Debug|Win32.Build.0 = Debug|Win32
+ 		{FAF9AD25-8238-49E9-9AC9-8C56E190440A}.Debug|x64.ActiveCfg = Debug|Win32
++		{FAF9AD25-8238-49E9-9AC9-8C56E190440A}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{FAF9AD25-8238-49E9-9AC9-8C56E190440A}.DebugStatic|x64.ActiveCfg = Debug|Win32
+ 		{FAF9AD25-8238-49E9-9AC9-8C56E190440A}.Release|Win32.ActiveCfg = Release|Win32
+ 		{FAF9AD25-8238-49E9-9AC9-8C56E190440A}.Release|Win32.Build.0 = Release|Win32
+ 		{FAF9AD25-8238-49E9-9AC9-8C56E190440A}.Release|x64.ActiveCfg = Release|Win32
++		{FAF9AD25-8238-49E9-9AC9-8C56E190440A}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{FAF9AD25-8238-49E9-9AC9-8C56E190440A}.ReleaseStatic|x64.ActiveCfg = Release|Win32
+ 		{EFB07DBC-36E3-4C54-B941-3CDAFAACF47B}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{EFB07DBC-36E3-4C54-B941-3CDAFAACF47B}.Debug|Win32.Build.0 = Debug|Win32
+ 		{EFB07DBC-36E3-4C54-B941-3CDAFAACF47B}.Debug|x64.ActiveCfg = Debug|x64
+ 		{EFB07DBC-36E3-4C54-B941-3CDAFAACF47B}.Debug|x64.Build.0 = Debug|x64
++		{EFB07DBC-36E3-4C54-B941-3CDAFAACF47B}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{EFB07DBC-36E3-4C54-B941-3CDAFAACF47B}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{EFB07DBC-36E3-4C54-B941-3CDAFAACF47B}.Release|Win32.ActiveCfg = Release|Win32
+ 		{EFB07DBC-36E3-4C54-B941-3CDAFAACF47B}.Release|Win32.Build.0 = Release|Win32
+ 		{EFB07DBC-36E3-4C54-B941-3CDAFAACF47B}.Release|x64.ActiveCfg = Release|x64
+ 		{EFB07DBC-36E3-4C54-B941-3CDAFAACF47B}.Release|x64.Build.0 = Release|x64
++		{EFB07DBC-36E3-4C54-B941-3CDAFAACF47B}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{EFB07DBC-36E3-4C54-B941-3CDAFAACF47B}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{53F75437-15B8-4A5C-86BF-E238CC68FCBC}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{53F75437-15B8-4A5C-86BF-E238CC68FCBC}.Debug|Win32.Build.0 = Debug|Win32
+ 		{53F75437-15B8-4A5C-86BF-E238CC68FCBC}.Debug|x64.ActiveCfg = Debug|x64
+ 		{53F75437-15B8-4A5C-86BF-E238CC68FCBC}.Debug|x64.Build.0 = Debug|x64
++		{53F75437-15B8-4A5C-86BF-E238CC68FCBC}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{53F75437-15B8-4A5C-86BF-E238CC68FCBC}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{53F75437-15B8-4A5C-86BF-E238CC68FCBC}.Release|Win32.ActiveCfg = Release|Win32
+ 		{53F75437-15B8-4A5C-86BF-E238CC68FCBC}.Release|Win32.Build.0 = Release|Win32
+ 		{53F75437-15B8-4A5C-86BF-E238CC68FCBC}.Release|x64.ActiveCfg = Release|x64
+ 		{53F75437-15B8-4A5C-86BF-E238CC68FCBC}.Release|x64.Build.0 = Release|x64
++		{53F75437-15B8-4A5C-86BF-E238CC68FCBC}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{53F75437-15B8-4A5C-86BF-E238CC68FCBC}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{58C7E370-0EDD-4F5E-8617-3F5071170205}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{58C7E370-0EDD-4F5E-8617-3F5071170205}.Debug|Win32.Build.0 = Debug|Win32
+ 		{58C7E370-0EDD-4F5E-8617-3F5071170205}.Debug|x64.ActiveCfg = Debug|x64
+ 		{58C7E370-0EDD-4F5E-8617-3F5071170205}.Debug|x64.Build.0 = Debug|x64
++		{58C7E370-0EDD-4F5E-8617-3F5071170205}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{58C7E370-0EDD-4F5E-8617-3F5071170205}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{58C7E370-0EDD-4F5E-8617-3F5071170205}.Release|Win32.ActiveCfg = Release|Win32
+ 		{58C7E370-0EDD-4F5E-8617-3F5071170205}.Release|Win32.Build.0 = Release|Win32
+ 		{58C7E370-0EDD-4F5E-8617-3F5071170205}.Release|x64.ActiveCfg = Release|x64
+ 		{58C7E370-0EDD-4F5E-8617-3F5071170205}.Release|x64.Build.0 = Release|x64
++		{58C7E370-0EDD-4F5E-8617-3F5071170205}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{58C7E370-0EDD-4F5E-8617-3F5071170205}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{20DEBF08-EF0A-4C94-ADEB-FE9BBA14588B}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{20DEBF08-EF0A-4C94-ADEB-FE9BBA14588B}.Debug|Win32.Build.0 = Debug|Win32
+ 		{20DEBF08-EF0A-4C94-ADEB-FE9BBA14588B}.Debug|x64.ActiveCfg = Debug|x64
+ 		{20DEBF08-EF0A-4C94-ADEB-FE9BBA14588B}.Debug|x64.Build.0 = Debug|x64
++		{20DEBF08-EF0A-4C94-ADEB-FE9BBA14588B}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{20DEBF08-EF0A-4C94-ADEB-FE9BBA14588B}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{20DEBF08-EF0A-4C94-ADEB-FE9BBA14588B}.Release|Win32.ActiveCfg = Release|Win32
+ 		{20DEBF08-EF0A-4C94-ADEB-FE9BBA14588B}.Release|Win32.Build.0 = Release|Win32
+ 		{20DEBF08-EF0A-4C94-ADEB-FE9BBA14588B}.Release|x64.ActiveCfg = Release|x64
+ 		{20DEBF08-EF0A-4C94-ADEB-FE9BBA14588B}.Release|x64.Build.0 = Release|x64
++		{20DEBF08-EF0A-4C94-ADEB-FE9BBA14588B}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{20DEBF08-EF0A-4C94-ADEB-FE9BBA14588B}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{2925B855-5975-44AE-BB00-1217A2A4E511}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{2925B855-5975-44AE-BB00-1217A2A4E511}.Debug|Win32.Build.0 = Debug|Win32
+ 		{2925B855-5975-44AE-BB00-1217A2A4E511}.Debug|x64.ActiveCfg = Debug|x64
+ 		{2925B855-5975-44AE-BB00-1217A2A4E511}.Debug|x64.Build.0 = Debug|x64
++		{2925B855-5975-44AE-BB00-1217A2A4E511}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{2925B855-5975-44AE-BB00-1217A2A4E511}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{2925B855-5975-44AE-BB00-1217A2A4E511}.Release|Win32.ActiveCfg = Release|Win32
+ 		{2925B855-5975-44AE-BB00-1217A2A4E511}.Release|Win32.Build.0 = Release|Win32
+ 		{2925B855-5975-44AE-BB00-1217A2A4E511}.Release|x64.ActiveCfg = Release|x64
+ 		{2925B855-5975-44AE-BB00-1217A2A4E511}.Release|x64.Build.0 = Release|x64
++		{2925B855-5975-44AE-BB00-1217A2A4E511}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{2925B855-5975-44AE-BB00-1217A2A4E511}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{4FE03933-98CD-4879-A135-FD9430087A6B}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{4FE03933-98CD-4879-A135-FD9430087A6B}.Debug|Win32.Build.0 = Debug|Win32
+ 		{4FE03933-98CD-4879-A135-FD9430087A6B}.Debug|x64.ActiveCfg = Debug|x64
+ 		{4FE03933-98CD-4879-A135-FD9430087A6B}.Debug|x64.Build.0 = Debug|x64
++		{4FE03933-98CD-4879-A135-FD9430087A6B}.DebugStatic|Win32.ActiveCfg = DebugStatic|Win32
++		{4FE03933-98CD-4879-A135-FD9430087A6B}.DebugStatic|Win32.Build.0 = DebugStatic|Win32
++		{4FE03933-98CD-4879-A135-FD9430087A6B}.DebugStatic|x64.ActiveCfg = DebugStatic|x64
++		{4FE03933-98CD-4879-A135-FD9430087A6B}.DebugStatic|x64.Build.0 = DebugStatic|x64
+ 		{4FE03933-98CD-4879-A135-FD9430087A6B}.Release|Win32.ActiveCfg = Release|Win32
+ 		{4FE03933-98CD-4879-A135-FD9430087A6B}.Release|Win32.Build.0 = Release|Win32
+ 		{4FE03933-98CD-4879-A135-FD9430087A6B}.Release|x64.ActiveCfg = Release|x64
+ 		{4FE03933-98CD-4879-A135-FD9430087A6B}.Release|x64.Build.0 = Release|x64
++		{4FE03933-98CD-4879-A135-FD9430087A6B}.ReleaseStatic|Win32.ActiveCfg = ReleaseStatic|Win32
++		{4FE03933-98CD-4879-A135-FD9430087A6B}.ReleaseStatic|Win32.Build.0 = ReleaseStatic|Win32
++		{4FE03933-98CD-4879-A135-FD9430087A6B}.ReleaseStatic|x64.ActiveCfg = ReleaseStatic|x64
++		{4FE03933-98CD-4879-A135-FD9430087A6B}.ReleaseStatic|x64.Build.0 = ReleaseStatic|x64
+ 		{D836FBF5-071E-4E04-8D63-C7EB6701B296}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{D836FBF5-071E-4E04-8D63-C7EB6701B296}.Debug|Win32.Build.0 = Debug|Win32
+ 		{D836FBF5-071E-4E04-8D63-C7EB6701B296}.Debug|x64.ActiveCfg = Debug|x64
+ 		{D836FBF5-071E-4E04-8D63-C7EB6701B296}.Debug|x64.Build.0 = Debug|x64
++		{D836FBF5-071E-4E04-8D63-C7EB6701B296}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{D836FBF5-071E-4E04-8D63-C7EB6701B296}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{D836FBF5-071E-4E04-8D63-C7EB6701B296}.Release|Win32.ActiveCfg = Release|Win32
+ 		{D836FBF5-071E-4E04-8D63-C7EB6701B296}.Release|Win32.Build.0 = Release|Win32
+ 		{D836FBF5-071E-4E04-8D63-C7EB6701B296}.Release|x64.ActiveCfg = Release|x64
+ 		{D836FBF5-071E-4E04-8D63-C7EB6701B296}.Release|x64.Build.0 = Release|x64
++		{D836FBF5-071E-4E04-8D63-C7EB6701B296}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{D836FBF5-071E-4E04-8D63-C7EB6701B296}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{BD00D28E-6667-414E-A4B1-6BEFC07ADB42}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{BD00D28E-6667-414E-A4B1-6BEFC07ADB42}.Debug|Win32.Build.0 = Debug|Win32
+ 		{BD00D28E-6667-414E-A4B1-6BEFC07ADB42}.Debug|x64.ActiveCfg = Debug|x64
+ 		{BD00D28E-6667-414E-A4B1-6BEFC07ADB42}.Debug|x64.Build.0 = Debug|x64
++		{BD00D28E-6667-414E-A4B1-6BEFC07ADB42}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{BD00D28E-6667-414E-A4B1-6BEFC07ADB42}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{BD00D28E-6667-414E-A4B1-6BEFC07ADB42}.Release|Win32.ActiveCfg = Release|Win32
+ 		{BD00D28E-6667-414E-A4B1-6BEFC07ADB42}.Release|Win32.Build.0 = Release|Win32
+ 		{BD00D28E-6667-414E-A4B1-6BEFC07ADB42}.Release|x64.ActiveCfg = Release|x64
+ 		{BD00D28E-6667-414E-A4B1-6BEFC07ADB42}.Release|x64.Build.0 = Release|x64
++		{BD00D28E-6667-414E-A4B1-6BEFC07ADB42}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{BD00D28E-6667-414E-A4B1-6BEFC07ADB42}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{062BD3C7-2D01-44F6-8D79-070F688C559F}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{062BD3C7-2D01-44F6-8D79-070F688C559F}.Debug|Win32.Build.0 = Debug|Win32
+ 		{062BD3C7-2D01-44F6-8D79-070F688C559F}.Debug|x64.ActiveCfg = Debug|x64
+ 		{062BD3C7-2D01-44F6-8D79-070F688C559F}.Debug|x64.Build.0 = Debug|x64
++		{062BD3C7-2D01-44F6-8D79-070F688C559F}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{062BD3C7-2D01-44F6-8D79-070F688C559F}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{062BD3C7-2D01-44F6-8D79-070F688C559F}.Release|Win32.ActiveCfg = Release|Win32
+ 		{062BD3C7-2D01-44F6-8D79-070F688C559F}.Release|Win32.Build.0 = Release|Win32
+ 		{062BD3C7-2D01-44F6-8D79-070F688C559F}.Release|x64.ActiveCfg = Release|x64
+ 		{062BD3C7-2D01-44F6-8D79-070F688C559F}.Release|x64.Build.0 = Release|x64
++		{062BD3C7-2D01-44F6-8D79-070F688C559F}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{062BD3C7-2D01-44F6-8D79-070F688C559F}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{6794EB8C-6425-422D-A3B0-14EED54C0E98}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{6794EB8C-6425-422D-A3B0-14EED54C0E98}.Debug|Win32.Build.0 = Debug|Win32
+ 		{6794EB8C-6425-422D-A3B0-14EED54C0E98}.Debug|x64.ActiveCfg = Debug|x64
+ 		{6794EB8C-6425-422D-A3B0-14EED54C0E98}.Debug|x64.Build.0 = Debug|x64
++		{6794EB8C-6425-422D-A3B0-14EED54C0E98}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{6794EB8C-6425-422D-A3B0-14EED54C0E98}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{6794EB8C-6425-422D-A3B0-14EED54C0E98}.Release|Win32.ActiveCfg = Release|Win32
+ 		{6794EB8C-6425-422D-A3B0-14EED54C0E98}.Release|Win32.Build.0 = Release|Win32
+ 		{6794EB8C-6425-422D-A3B0-14EED54C0E98}.Release|x64.ActiveCfg = Release|x64
+ 		{6794EB8C-6425-422D-A3B0-14EED54C0E98}.Release|x64.Build.0 = Release|x64
++		{6794EB8C-6425-422D-A3B0-14EED54C0E98}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{6794EB8C-6425-422D-A3B0-14EED54C0E98}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{F2E1A852-5A4B-4162-9DA8-0363805FCFD0}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{F2E1A852-5A4B-4162-9DA8-0363805FCFD0}.Debug|Win32.Build.0 = Debug|Win32
+ 		{F2E1A852-5A4B-4162-9DA8-0363805FCFD0}.Debug|x64.ActiveCfg = Debug|x64
+ 		{F2E1A852-5A4B-4162-9DA8-0363805FCFD0}.Debug|x64.Build.0 = Debug|x64
++		{F2E1A852-5A4B-4162-9DA8-0363805FCFD0}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{F2E1A852-5A4B-4162-9DA8-0363805FCFD0}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{F2E1A852-5A4B-4162-9DA8-0363805FCFD0}.Release|Win32.ActiveCfg = Release|Win32
+ 		{F2E1A852-5A4B-4162-9DA8-0363805FCFD0}.Release|Win32.Build.0 = Release|Win32
+ 		{F2E1A852-5A4B-4162-9DA8-0363805FCFD0}.Release|x64.ActiveCfg = Release|x64
+ 		{F2E1A852-5A4B-4162-9DA8-0363805FCFD0}.Release|x64.Build.0 = Release|x64
++		{F2E1A852-5A4B-4162-9DA8-0363805FCFD0}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{F2E1A852-5A4B-4162-9DA8-0363805FCFD0}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{B32D1B09-8161-451E-8D20-D30F26094EC0}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{B32D1B09-8161-451E-8D20-D30F26094EC0}.Debug|Win32.Build.0 = Debug|Win32
+ 		{B32D1B09-8161-451E-8D20-D30F26094EC0}.Debug|x64.ActiveCfg = Debug|x64
+ 		{B32D1B09-8161-451E-8D20-D30F26094EC0}.Debug|x64.Build.0 = Debug|x64
++		{B32D1B09-8161-451E-8D20-D30F26094EC0}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{B32D1B09-8161-451E-8D20-D30F26094EC0}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{B32D1B09-8161-451E-8D20-D30F26094EC0}.Release|Win32.ActiveCfg = Release|Win32
+ 		{B32D1B09-8161-451E-8D20-D30F26094EC0}.Release|Win32.Build.0 = Release|Win32
+ 		{B32D1B09-8161-451E-8D20-D30F26094EC0}.Release|x64.ActiveCfg = Release|x64
+ 		{B32D1B09-8161-451E-8D20-D30F26094EC0}.Release|x64.Build.0 = Release|x64
++		{B32D1B09-8161-451E-8D20-D30F26094EC0}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{B32D1B09-8161-451E-8D20-D30F26094EC0}.ReleaseStatic|x64.ActiveCfg = Release|x64
++		{9821F2C0-4EC1-4ACB-BF32-DEB4C21032DE}.Debug|Win32.ActiveCfg = Debug|Win32
++		{9821F2C0-4EC1-4ACB-BF32-DEB4C21032DE}.Debug|Win32.Build.0 = Debug|Win32
++		{9821F2C0-4EC1-4ACB-BF32-DEB4C21032DE}.Debug|x64.ActiveCfg = Debug|x64
++		{9821F2C0-4EC1-4ACB-BF32-DEB4C21032DE}.Debug|x64.Build.0 = Debug|x64
++		{9821F2C0-4EC1-4ACB-BF32-DEB4C21032DE}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{9821F2C0-4EC1-4ACB-BF32-DEB4C21032DE}.DebugStatic|x64.ActiveCfg = Debug|x64
++		{9821F2C0-4EC1-4ACB-BF32-DEB4C21032DE}.Release|Win32.ActiveCfg = Release|Win32
++		{9821F2C0-4EC1-4ACB-BF32-DEB4C21032DE}.Release|Win32.Build.0 = Release|Win32
++		{9821F2C0-4EC1-4ACB-BF32-DEB4C21032DE}.Release|x64.ActiveCfg = Release|x64
++		{9821F2C0-4EC1-4ACB-BF32-DEB4C21032DE}.Release|x64.Build.0 = Release|x64
++		{9821F2C0-4EC1-4ACB-BF32-DEB4C21032DE}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{9821F2C0-4EC1-4ACB-BF32-DEB4C21032DE}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{035D26F9-B406-4D60-A8B7-172098479254}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{035D26F9-B406-4D60-A8B7-172098479254}.Debug|Win32.Build.0 = Debug|Win32
+ 		{035D26F9-B406-4D60-A8B7-172098479254}.Debug|x64.ActiveCfg = Debug|x64
+ 		{035D26F9-B406-4D60-A8B7-172098479254}.Debug|x64.Build.0 = Debug|x64
++		{035D26F9-B406-4D60-A8B7-172098479254}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{035D26F9-B406-4D60-A8B7-172098479254}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{035D26F9-B406-4D60-A8B7-172098479254}.Release|Win32.ActiveCfg = Release|Win32
+ 		{035D26F9-B406-4D60-A8B7-172098479254}.Release|Win32.Build.0 = Release|Win32
+ 		{035D26F9-B406-4D60-A8B7-172098479254}.Release|x64.ActiveCfg = Release|x64
+ 		{035D26F9-B406-4D60-A8B7-172098479254}.Release|x64.Build.0 = Release|x64
++		{035D26F9-B406-4D60-A8B7-172098479254}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{035D26F9-B406-4D60-A8B7-172098479254}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 		{3314D6AD-554F-4AE1-B297-6D2D6207DD7C}.Debug|Win32.ActiveCfg = Debug|Win32
+ 		{3314D6AD-554F-4AE1-B297-6D2D6207DD7C}.Debug|Win32.Build.0 = Debug|Win32
+ 		{3314D6AD-554F-4AE1-B297-6D2D6207DD7C}.Debug|x64.ActiveCfg = Debug|x64
+ 		{3314D6AD-554F-4AE1-B297-6D2D6207DD7C}.Debug|x64.Build.0 = Debug|x64
++		{3314D6AD-554F-4AE1-B297-6D2D6207DD7C}.DebugStatic|Win32.ActiveCfg = Debug|Win32
++		{3314D6AD-554F-4AE1-B297-6D2D6207DD7C}.DebugStatic|x64.ActiveCfg = Debug|x64
+ 		{3314D6AD-554F-4AE1-B297-6D2D6207DD7C}.Release|Win32.ActiveCfg = Release|Win32
+ 		{3314D6AD-554F-4AE1-B297-6D2D6207DD7C}.Release|Win32.Build.0 = Release|Win32
+ 		{3314D6AD-554F-4AE1-B297-6D2D6207DD7C}.Release|x64.ActiveCfg = Release|x64
+ 		{3314D6AD-554F-4AE1-B297-6D2D6207DD7C}.Release|x64.Build.0 = Release|x64
+-		{9821F2C0-4EC1-4ACB-BF32-DEB4C21032DE}.Debug|Win32.ActiveCfg = Debug|Win32
+-		{9821F2C0-4EC1-4ACB-BF32-DEB4C21032DE}.Debug|Win32.Build.0 = Debug|Win32
+-		{9821F2C0-4EC1-4ACB-BF32-DEB4C21032DE}.Debug|x64.ActiveCfg = Debug|x64
+-		{9821F2C0-4EC1-4ACB-BF32-DEB4C21032DE}.Debug|x64.Build.0 = Debug|x64
+-		{9821F2C0-4EC1-4ACB-BF32-DEB4C21032DE}.Release|Win32.ActiveCfg = Release|Win32
+-		{9821F2C0-4EC1-4ACB-BF32-DEB4C21032DE}.Release|Win32.Build.0 = Release|Win32
+-		{9821F2C0-4EC1-4ACB-BF32-DEB4C21032DE}.Release|x64.ActiveCfg = Release|x64
+-		{9821F2C0-4EC1-4ACB-BF32-DEB4C21032DE}.Release|x64.Build.0 = Release|x64
++		{3314D6AD-554F-4AE1-B297-6D2D6207DD7C}.ReleaseStatic|Win32.ActiveCfg = Release|Win32
++		{3314D6AD-554F-4AE1-B297-6D2D6207DD7C}.ReleaseStatic|x64.ActiveCfg = Release|x64
+ 	EndGlobalSection
+ 	GlobalSection(SolutionProperties) = preSolution
+ 		HideSolutionNode = FALSE
+diff --git a/builds/win32/msvc15/FirebirdDebugStatic.props b/builds/win32/msvc15/FirebirdDebugStatic.props
+new file mode 100644
+index 0000000000..02ac17ce31
+--- /dev/null
++++ b/builds/win32/msvc15/FirebirdDebugStatic.props
+@@ -0,0 +1,15 @@
++﻿<?xml version="1.0" encoding="utf-8"?>
++<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
++  <PropertyGroup>
++    <_ProjectFileVersion>10.0.30319.1</_ProjectFileVersion>
++  </PropertyGroup>
++  <ItemDefinitionGroup>
++    <ClCompile>
++      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
++      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
++    </ClCompile>
++    <ResourceCompile>
++      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
++    </ResourceCompile>
++  </ItemDefinitionGroup>
++</Project>
+diff --git a/builds/win32/msvc15/FirebirdReleaseStatic.props b/builds/win32/msvc15/FirebirdReleaseStatic.props
+new file mode 100644
+index 0000000000..ebd0992ba8
+--- /dev/null
++++ b/builds/win32/msvc15/FirebirdReleaseStatic.props
+@@ -0,0 +1,18 @@
++﻿<?xml version="1.0" encoding="utf-8"?>
++<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
++  <PropertyGroup>
++    <_ProjectFileVersion>10.0.30319.1</_ProjectFileVersion>
++  </PropertyGroup>
++  <ItemDefinitionGroup>
++    <ClCompile>
++      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
++      <AdditionalOptions>/Zo %(AdditionalOptions)</AdditionalOptions>
++      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
++      <IntrinsicFunctions>true</IntrinsicFunctions>
++      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
++    </ClCompile>
++    <ResourceCompile>
++      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
++    </ResourceCompile>
++  </ItemDefinitionGroup>
++</Project>
+diff --git a/builds/win32/msvc15/common.vcxproj b/builds/win32/msvc15/common.vcxproj
+index a9fc6ff024..86d3824b89 100644
+--- a/builds/win32/msvc15/common.vcxproj
++++ b/builds/win32/msvc15/common.vcxproj
+@@ -9,6 +9,14 @@
+       <Configuration>Debug</Configuration>
+       <Platform>x64</Platform>
+     </ProjectConfiguration>
++    <ProjectConfiguration Include="DebugStatic|Win32">
++      <Configuration>DebugStatic</Configuration>
++      <Platform>Win32</Platform>
++    </ProjectConfiguration>
++    <ProjectConfiguration Include="DebugStatic|x64">
++      <Configuration>DebugStatic</Configuration>
++      <Platform>x64</Platform>
++    </ProjectConfiguration>
+     <ProjectConfiguration Include="Release|Win32">
+       <Configuration>Release</Configuration>
+       <Platform>Win32</Platform>
+@@ -17,6 +25,14 @@
+       <Configuration>Release</Configuration>
+       <Platform>x64</Platform>
+     </ProjectConfiguration>
++    <ProjectConfiguration Include="ReleaseStatic|Win32">
++      <Configuration>ReleaseStatic</Configuration>
++      <Platform>Win32</Platform>
++    </ProjectConfiguration>
++    <ProjectConfiguration Include="ReleaseStatic|x64">
++      <Configuration>ReleaseStatic</Configuration>
++      <Platform>x64</Platform>
++    </ProjectConfiguration>
+   </ItemGroup>
+   <ItemGroup>
+     <ClCompile Include="..\..\..\src\common\Auth.cpp" />
+@@ -46,6 +62,7 @@
+     <ClCompile Include="..\..\..\src\common\classes\Synchronize.cpp" />
+     <ClCompile Include="..\..\..\src\common\classes\SyncObject.cpp" />
+     <ClCompile Include="..\..\..\src\common\classes\TempFile.cpp" />
++    <ClCompile Include="..\..\..\src\common\classes\ThreadCleanup.cpp" />
+     <ClCompile Include="..\..\..\src\common\classes\TimerImpl.cpp" />
+     <ClCompile Include="..\..\..\src\common\classes\timestamp.cpp" />
+     <ClCompile Include="..\..\..\src\common\classes\TomCryptHash.cpp" />
+@@ -156,6 +173,7 @@
+     <ClInclude Include="..\..\..\src\common\classes\Synchronize.h" />
+     <ClInclude Include="..\..\..\src\common\classes\SyncObject.h" />
+     <ClInclude Include="..\..\..\src\common\classes\TempFile.h" />
++    <ClInclude Include="..\..\..\src\common\classes\ThreadCleanup.h" />
+     <ClInclude Include="..\..\..\src\common\classes\TimerImpl.h" />
+     <ClInclude Include="..\..\..\src\common\classes\timestamp.h" />
+     <ClInclude Include="..\..\..\src\common\classes\tree.h" />
+@@ -244,6 +262,15 @@
+     <PlatformToolset Condition="'$(VisualStudioVersion)'=='17.0'">v143</PlatformToolset>
+     <PlatformToolset Condition="'$(VisualStudioVersion)'=='18.0'">v145</PlatformToolset>
+   </PropertyGroup>
++  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugStatic|Win32'" Label="Configuration">
++    <ConfigurationType>StaticLibrary</ConfigurationType>
++    <UseOfMfc>false</UseOfMfc>
++    <CharacterSet>MultiByte</CharacterSet>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='15.0'">v141</PlatformToolset>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='16.0'">v142</PlatformToolset>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='17.0'">v143</PlatformToolset>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='18.0'">v145</PlatformToolset>
++  </PropertyGroup>
+   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+     <ConfigurationType>StaticLibrary</ConfigurationType>
+     <UseOfMfc>false</UseOfMfc>
+@@ -253,6 +280,15 @@
+     <PlatformToolset Condition="'$(VisualStudioVersion)'=='17.0'">v143</PlatformToolset>
+     <PlatformToolset Condition="'$(VisualStudioVersion)'=='18.0'">v145</PlatformToolset>
+   </PropertyGroup>
++  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'" Label="Configuration">
++    <ConfigurationType>StaticLibrary</ConfigurationType>
++    <UseOfMfc>false</UseOfMfc>
++    <CharacterSet>MultiByte</CharacterSet>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='15.0'">v141</PlatformToolset>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='16.0'">v142</PlatformToolset>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='17.0'">v143</PlatformToolset>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='18.0'">v145</PlatformToolset>
++  </PropertyGroup>
+   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+     <ConfigurationType>StaticLibrary</ConfigurationType>
+     <UseOfMfc>false</UseOfMfc>
+@@ -262,6 +298,15 @@
+     <PlatformToolset Condition="'$(VisualStudioVersion)'=='17.0'">v143</PlatformToolset>
+     <PlatformToolset Condition="'$(VisualStudioVersion)'=='18.0'">v145</PlatformToolset>
+   </PropertyGroup>
++  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugStatic|x64'" Label="Configuration">
++    <ConfigurationType>StaticLibrary</ConfigurationType>
++    <UseOfMfc>false</UseOfMfc>
++    <CharacterSet>MultiByte</CharacterSet>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='15.0'">v141</PlatformToolset>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='16.0'">v142</PlatformToolset>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='17.0'">v143</PlatformToolset>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='18.0'">v145</PlatformToolset>
++  </PropertyGroup>
+   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+     <ConfigurationType>StaticLibrary</ConfigurationType>
+     <UseOfMfc>false</UseOfMfc>
+@@ -271,6 +316,15 @@
+     <PlatformToolset Condition="'$(VisualStudioVersion)'=='17.0'">v143</PlatformToolset>
+     <PlatformToolset Condition="'$(VisualStudioVersion)'=='18.0'">v145</PlatformToolset>
+   </PropertyGroup>
++  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'" Label="Configuration">
++    <ConfigurationType>StaticLibrary</ConfigurationType>
++    <UseOfMfc>false</UseOfMfc>
++    <CharacterSet>MultiByte</CharacterSet>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='15.0'">v141</PlatformToolset>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='16.0'">v142</PlatformToolset>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='17.0'">v143</PlatformToolset>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='18.0'">v145</PlatformToolset>
++  </PropertyGroup>
+   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+   <ImportGroup Label="ExtensionSettings">
+   </ImportGroup>
+@@ -280,39 +334,75 @@
+     <Import Project="FirebirdCommon.props" />
+     <Import Project="FirebirdDebug.props" />
+   </ImportGroup>
++  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='DebugStatic|Win32'" Label="PropertySheets">
++    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
++    <Import Project="$(VCTargetsPath)Microsoft.CPP.UpgradeFromVC71.props" />
++    <Import Project="FirebirdCommon.props" />
++    <Import Project="FirebirdDebugStatic.props" />
++  </ImportGroup>
+   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="PropertySheets">
+     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+     <Import Project="$(VCTargetsPath)Microsoft.CPP.UpgradeFromVC71.props" />
+     <Import Project="FirebirdCommon.props" />
+     <Import Project="FirebirdRelease.props" />
+   </ImportGroup>
++  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'" Label="PropertySheets">
++    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
++    <Import Project="$(VCTargetsPath)Microsoft.CPP.UpgradeFromVC71.props" />
++    <Import Project="FirebirdCommon.props" />
++    <Import Project="FirebirdReleaseStatic.props" />
++  </ImportGroup>
+   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="PropertySheets">
+     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+     <Import Project="$(VCTargetsPath)Microsoft.CPP.UpgradeFromVC71.props" />
+     <Import Project="FirebirdCommon.props" />
+     <Import Project="FirebirdDebug.props" />
+   </ImportGroup>
++  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='DebugStatic|x64'" Label="PropertySheets">
++    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
++    <Import Project="$(VCTargetsPath)Microsoft.CPP.UpgradeFromVC71.props" />
++    <Import Project="FirebirdCommon.props" />
++    <Import Project="FirebirdDebugStatic.props" />
++  </ImportGroup>
+   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="PropertySheets">
+     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+     <Import Project="$(VCTargetsPath)Microsoft.CPP.UpgradeFromVC71.props" />
+     <Import Project="FirebirdCommon.props" />
+     <Import Project="FirebirdRelease.props" />
+   </ImportGroup>
++  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'" Label="PropertySheets">
++    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
++    <Import Project="$(VCTargetsPath)Microsoft.CPP.UpgradeFromVC71.props" />
++    <Import Project="FirebirdCommon.props" />
++    <Import Project="FirebirdReleaseStatic.props" />
++  </ImportGroup>
+   <PropertyGroup Label="UserMacros" />
+   <PropertyGroup>
+     <_ProjectFileVersion>10.0.30319.1</_ProjectFileVersion>
+     <CodeAnalysisRuleSet Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">AllRules.ruleset</CodeAnalysisRuleSet>
+     <CodeAnalysisRules Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" />
+     <CodeAnalysisRuleAssemblies Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" />
++    <CodeAnalysisRuleSet Condition="'$(Configuration)|$(Platform)'=='DebugStatic|Win32'">AllRules.ruleset</CodeAnalysisRuleSet>
++    <CodeAnalysisRules Condition="'$(Configuration)|$(Platform)'=='DebugStatic|Win32'" />
++    <CodeAnalysisRuleAssemblies Condition="'$(Configuration)|$(Platform)'=='DebugStatic|Win32'" />
+     <CodeAnalysisRuleSet Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">AllRules.ruleset</CodeAnalysisRuleSet>
+     <CodeAnalysisRules Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" />
+     <CodeAnalysisRuleAssemblies Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" />
++    <CodeAnalysisRuleSet Condition="'$(Configuration)|$(Platform)'=='DebugStatic|x64'">AllRules.ruleset</CodeAnalysisRuleSet>
++    <CodeAnalysisRules Condition="'$(Configuration)|$(Platform)'=='DebugStatic|x64'" />
++    <CodeAnalysisRuleAssemblies Condition="'$(Configuration)|$(Platform)'=='DebugStatic|x64'" />
+     <CodeAnalysisRuleSet Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">AllRules.ruleset</CodeAnalysisRuleSet>
+     <CodeAnalysisRules Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" />
+     <CodeAnalysisRuleAssemblies Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" />
++    <CodeAnalysisRuleSet Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'">AllRules.ruleset</CodeAnalysisRuleSet>
++    <CodeAnalysisRules Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'" />
++    <CodeAnalysisRuleAssemblies Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'" />
+     <CodeAnalysisRuleSet Condition="'$(Configuration)|$(Platform)'=='Release|x64'">AllRules.ruleset</CodeAnalysisRuleSet>
+     <CodeAnalysisRules Condition="'$(Configuration)|$(Platform)'=='Release|x64'" />
+     <CodeAnalysisRuleAssemblies Condition="'$(Configuration)|$(Platform)'=='Release|x64'" />
++    <CodeAnalysisRuleSet Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'">AllRules.ruleset</CodeAnalysisRuleSet>
++    <CodeAnalysisRules Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'" />
++    <CodeAnalysisRuleAssemblies Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'" />
+   </PropertyGroup>
+   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+     <ClCompile>
+@@ -359,6 +449,51 @@
+       <AdditionalDependencies>ws2_32.lib;../../../extern/libtommath/lib/$(PlatformName)\$(Configuration)\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\$(Configuration)\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\$(Configuration)\decnumber.lib;../../../extern/ttmath\$(Configuration)\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
+     </Lib>
+   </ItemDefinitionGroup>
++  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'">
++    <ClCompile>
++      <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;SUPERSERVER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
++    </ClCompile>
++    <Lib>
++      <AdditionalDependencies>../../../extern/libtommath/lib/$(PlatformName)\Release\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\Release\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
++    </Lib>
++  </ItemDefinitionGroup>
++  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='DebugStatic|Win32'">
++    <ClCompile>
++      <Optimization>Disabled</Optimization>
++      <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;DEV_BUILD;SUPERSERVER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
++      <PrecompiledHeader>
++      </PrecompiledHeader>
++      <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
++    </ClCompile>
++    <Lib>
++      <AdditionalDependencies>../../../extern/libtommath/lib/$(PlatformName)\Debug\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\Debug\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
++    </Lib>
++  </ItemDefinitionGroup>
++  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'">
++    <Midl>
++      <TargetEnvironment>X64</TargetEnvironment>
++    </Midl>
++    <ClCompile>
++      <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;SUPERSERVER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
++    </ClCompile>
++    <Lib>
++      <AdditionalDependencies>../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;../../../extern/ttmath\Release\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
++    </Lib>
++  </ItemDefinitionGroup>
++  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='DebugStatic|x64'">
++    <Midl>
++      <TargetEnvironment>X64</TargetEnvironment>
++    </Midl>
++    <ClCompile>
++      <Optimization>Disabled</Optimization>
++      <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;DEV_BUILD;SUPERSERVER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
++      <PrecompiledHeader>
++      </PrecompiledHeader>
++    </ClCompile>
++    <Lib>
++      <AdditionalDependencies>../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;../../../extern/ttmath\Debug\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
++    </Lib>
++  </ItemDefinitionGroup>
+   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+   <ImportGroup Label="ExtensionTargets">
+   </ImportGroup>
+diff --git a/builds/win32/msvc15/common.vcxproj.filters b/builds/win32/msvc15/common.vcxproj.filters
+index eb80abdaeb..904a547c20 100644
+--- a/builds/win32/msvc15/common.vcxproj.filters
++++ b/builds/win32/msvc15/common.vcxproj.filters
+@@ -138,6 +138,9 @@
+     <ClCompile Include="..\..\..\src\common\classes\TempFile.cpp">
+       <Filter>classes</Filter>
+     </ClCompile>
++    <ClCompile Include="..\..\..\src\common\classes\ThreadCleanup.cpp">
++      <Filter>classes</Filter>
++    </ClCompile>
+     <ClCompile Include="..\..\..\src\common\classes\timestamp.cpp">
+       <Filter>classes</Filter>
+     </ClCompile>
+@@ -473,6 +476,9 @@
+     <ClInclude Include="..\..\..\src\common\classes\TempFile.h">
+       <Filter>headers</Filter>
+     </ClInclude>
++    <ClInclude Include="..\..\..\src\common\classes\ThreadCleanup.h">
++      <Filter>headers</Filter>
++    </ClInclude>
+     <ClInclude Include="..\..\..\src\common\classes\timestamp.h">
+       <Filter>headers</Filter>
+     </ClInclude>
+diff --git a/builds/win32/msvc15/yvalve.vcxproj b/builds/win32/msvc15/yvalve.vcxproj
+index a9103faa25..86b17da328 100644
+--- a/builds/win32/msvc15/yvalve.vcxproj
++++ b/builds/win32/msvc15/yvalve.vcxproj
+@@ -9,6 +9,14 @@
+       <Configuration>Debug</Configuration>
+       <Platform>x64</Platform>
+     </ProjectConfiguration>
++    <ProjectConfiguration Include="DebugStatic|Win32">
++      <Configuration>DebugStatic</Configuration>
++      <Platform>Win32</Platform>
++    </ProjectConfiguration>
++    <ProjectConfiguration Include="DebugStatic|x64">
++      <Configuration>DebugStatic</Configuration>
++      <Platform>x64</Platform>
++    </ProjectConfiguration>
+     <ProjectConfiguration Include="Release|Win32">
+       <Configuration>Release</Configuration>
+       <Platform>Win32</Platform>
+@@ -17,11 +25,18 @@
+       <Configuration>Release</Configuration>
+       <Platform>x64</Platform>
+     </ProjectConfiguration>
++    <ProjectConfiguration Include="ReleaseStatic|Win32">
++      <Configuration>ReleaseStatic</Configuration>
++      <Platform>Win32</Platform>
++    </ProjectConfiguration>
++    <ProjectConfiguration Include="ReleaseStatic|x64">
++      <Configuration>ReleaseStatic</Configuration>
++      <Platform>x64</Platform>
++    </ProjectConfiguration>
+   </ItemGroup>
+   <ItemGroup>
+     <ClCompile Include="..\..\..\src\auth\SecureRemotePassword\client\SrpClient.cpp" />
+     <ClCompile Include="..\..\..\src\auth\SecurityDatabase\LegacyClient.cpp" />
+-    <ClCompile Include="..\..\..\src\jrd\os\win32\ibinitdll.cpp" />
+     <ClCompile Include="..\..\..\src\plugins\crypt\arc4\Arc4.cpp" />
+     <ClCompile Include="..\..\..\src\remote\client\BlrFromMessage.cpp" />
+     <ClCompile Include="..\..\..\src\remote\client\interface.cpp" />
+@@ -39,6 +54,10 @@
+     <ClCompile Include="..\..\..\src\yvalve\user_dsql.cpp" />
+     <ClCompile Include="..\..\..\src\yvalve\utl.cpp" />
+     <ClCompile Include="..\..\..\src\yvalve\why.cpp" />
++    <ClCompile Include="..\..\..\src\jrd\os\win32\ibinitdll.cpp">
++      <ExcludedFromBuild Condition="'$(Configuration)'=='DebugStatic'">true</ExcludedFromBuild>
++      <ExcludedFromBuild Condition="'$(Configuration)'=='ReleaseStatic'">true</ExcludedFromBuild>
++    </ClCompile>
+   </ItemGroup>
+   <ItemGroup>
+     <ClInclude Include="..\..\..\src\auth\SecureRemotePassword\client\SrpClient.h" />
+@@ -78,7 +97,10 @@
+     </ProjectReference>
+   </ItemGroup>
+   <ItemGroup>
+-    <ResourceCompile Include="..\..\..\src\jrd\version.rc" />
++    <ResourceCompile Include="..\..\..\src\jrd\version.rc">
++      <ExcludedFromBuild Condition="'$(Configuration)'=='DebugStatic'">true</ExcludedFromBuild>
++      <ExcludedFromBuild Condition="'$(Configuration)'=='ReleaseStatic'">true</ExcludedFromBuild>
++    </ResourceCompile>
+   </ItemGroup>
+   <ItemGroup>
+     <None Include="..\defs\firebird.def" />
+@@ -101,6 +123,15 @@
+     <PlatformToolset Condition="'$(VisualStudioVersion)'=='17.0'">v143</PlatformToolset>
+     <PlatformToolset Condition="'$(VisualStudioVersion)'=='18.0'">v145</PlatformToolset>
+   </PropertyGroup>
++  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugStatic|Win32'" Label="Configuration">
++    <ConfigurationType>StaticLibrary</ConfigurationType>
++    <UseOfMfc>false</UseOfMfc>
++    <CharacterSet>MultiByte</CharacterSet>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='15.0'">v141</PlatformToolset>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='16.0'">v142</PlatformToolset>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='17.0'">v143</PlatformToolset>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='18.0'">v145</PlatformToolset>
++  </PropertyGroup>
+   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+     <ConfigurationType>DynamicLibrary</ConfigurationType>
+     <UseOfMfc>false</UseOfMfc>
+@@ -110,6 +141,15 @@
+     <PlatformToolset Condition="'$(VisualStudioVersion)'=='17.0'">v143</PlatformToolset>
+     <PlatformToolset Condition="'$(VisualStudioVersion)'=='18.0'">v145</PlatformToolset>
+   </PropertyGroup>
++  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'" Label="Configuration">
++    <ConfigurationType>StaticLibrary</ConfigurationType>
++    <UseOfMfc>false</UseOfMfc>
++    <CharacterSet>MultiByte</CharacterSet>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='15.0'">v141</PlatformToolset>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='16.0'">v142</PlatformToolset>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='17.0'">v143</PlatformToolset>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='18.0'">v145</PlatformToolset>
++  </PropertyGroup>
+   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+     <ConfigurationType>DynamicLibrary</ConfigurationType>
+     <UseOfMfc>false</UseOfMfc>
+@@ -119,6 +159,15 @@
+     <PlatformToolset Condition="'$(VisualStudioVersion)'=='17.0'">v143</PlatformToolset>
+     <PlatformToolset Condition="'$(VisualStudioVersion)'=='18.0'">v145</PlatformToolset>
+   </PropertyGroup>
++  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugStatic|x64'" Label="Configuration">
++    <ConfigurationType>StaticLibrary</ConfigurationType>
++    <UseOfMfc>false</UseOfMfc>
++    <CharacterSet>MultiByte</CharacterSet>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='15.0'">v141</PlatformToolset>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='16.0'">v142</PlatformToolset>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='17.0'">v143</PlatformToolset>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='18.0'">v145</PlatformToolset>
++  </PropertyGroup>
+   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+     <ConfigurationType>DynamicLibrary</ConfigurationType>
+     <UseOfMfc>false</UseOfMfc>
+@@ -128,6 +177,15 @@
+     <PlatformToolset Condition="'$(VisualStudioVersion)'=='17.0'">v143</PlatformToolset>
+     <PlatformToolset Condition="'$(VisualStudioVersion)'=='18.0'">v145</PlatformToolset>
+   </PropertyGroup>
++  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'" Label="Configuration">
++    <ConfigurationType>StaticLibrary</ConfigurationType>
++    <UseOfMfc>false</UseOfMfc>
++    <CharacterSet>MultiByte</CharacterSet>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='15.0'">v141</PlatformToolset>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='16.0'">v142</PlatformToolset>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='17.0'">v143</PlatformToolset>
++    <PlatformToolset Condition="'$(VisualStudioVersion)'=='18.0'">v145</PlatformToolset>
++  </PropertyGroup>
+   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+   <ImportGroup Label="ExtensionSettings">
+   </ImportGroup>
+@@ -137,43 +195,83 @@
+     <Import Project="FirebirdCommon.props" />
+     <Import Project="FirebirdDebug.props" />
+   </ImportGroup>
++  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='DebugStatic|Win32'" Label="PropertySheets">
++    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
++    <Import Project="$(VCTargetsPath)Microsoft.CPP.UpgradeFromVC71.props" />
++    <Import Project="FirebirdCommon.props" />
++    <Import Project="FirebirdDebugStatic.props" />
++  </ImportGroup>
+   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="PropertySheets">
+     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+     <Import Project="$(VCTargetsPath)Microsoft.CPP.UpgradeFromVC71.props" />
+     <Import Project="FirebirdCommon.props" />
+     <Import Project="FirebirdRelease.props" />
+   </ImportGroup>
++  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'" Label="PropertySheets">
++    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
++    <Import Project="$(VCTargetsPath)Microsoft.CPP.UpgradeFromVC71.props" />
++    <Import Project="FirebirdCommon.props" />
++    <Import Project="FirebirdReleaseStatic.props" />
++  </ImportGroup>
+   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="PropertySheets">
+     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+     <Import Project="$(VCTargetsPath)Microsoft.CPP.UpgradeFromVC71.props" />
+     <Import Project="FirebirdCommon.props" />
+     <Import Project="FirebirdDebug.props" />
+   </ImportGroup>
++  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='DebugStatic|x64'" Label="PropertySheets">
++    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
++    <Import Project="$(VCTargetsPath)Microsoft.CPP.UpgradeFromVC71.props" />
++    <Import Project="FirebirdCommon.props" />
++    <Import Project="FirebirdDebugStatic.props" />
++  </ImportGroup>
+   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="PropertySheets">
+     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+     <Import Project="$(VCTargetsPath)Microsoft.CPP.UpgradeFromVC71.props" />
+     <Import Project="FirebirdCommon.props" />
+     <Import Project="FirebirdRelease.props" />
+   </ImportGroup>
++  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'" Label="PropertySheets">
++    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
++    <Import Project="$(VCTargetsPath)Microsoft.CPP.UpgradeFromVC71.props" />
++    <Import Project="FirebirdCommon.props" />
++    <Import Project="FirebirdReleaseStatic.props" />
++  </ImportGroup>
+   <PropertyGroup Label="UserMacros" />
+   <PropertyGroup>
+     <_ProjectFileVersion>10.0.30319.1</_ProjectFileVersion>
+     <CodeAnalysisRuleSet Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">AllRules.ruleset</CodeAnalysisRuleSet>
+     <CodeAnalysisRules Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" />
+     <CodeAnalysisRuleAssemblies Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" />
++    <CodeAnalysisRuleSet Condition="'$(Configuration)|$(Platform)'=='DebugStatic|Win32'">AllRules.ruleset</CodeAnalysisRuleSet>
++    <CodeAnalysisRules Condition="'$(Configuration)|$(Platform)'=='DebugStatic|Win32'" />
++    <CodeAnalysisRuleAssemblies Condition="'$(Configuration)|$(Platform)'=='DebugStatic|Win32'" />
+     <CodeAnalysisRuleSet Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">AllRules.ruleset</CodeAnalysisRuleSet>
+     <CodeAnalysisRules Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" />
+     <CodeAnalysisRuleAssemblies Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" />
++    <CodeAnalysisRuleSet Condition="'$(Configuration)|$(Platform)'=='DebugStatic|x64'">AllRules.ruleset</CodeAnalysisRuleSet>
++    <CodeAnalysisRules Condition="'$(Configuration)|$(Platform)'=='DebugStatic|x64'" />
++    <CodeAnalysisRuleAssemblies Condition="'$(Configuration)|$(Platform)'=='DebugStatic|x64'" />
+     <CodeAnalysisRuleSet Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">AllRules.ruleset</CodeAnalysisRuleSet>
+     <CodeAnalysisRules Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" />
+     <CodeAnalysisRuleAssemblies Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" />
++    <CodeAnalysisRuleSet Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'">AllRules.ruleset</CodeAnalysisRuleSet>
++    <CodeAnalysisRules Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'" />
++    <CodeAnalysisRuleAssemblies Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'" />
+     <CodeAnalysisRuleSet Condition="'$(Configuration)|$(Platform)'=='Release|x64'">AllRules.ruleset</CodeAnalysisRuleSet>
+     <CodeAnalysisRules Condition="'$(Configuration)|$(Platform)'=='Release|x64'" />
+     <CodeAnalysisRuleAssemblies Condition="'$(Configuration)|$(Platform)'=='Release|x64'" />
++    <CodeAnalysisRuleSet Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'">AllRules.ruleset</CodeAnalysisRuleSet>
++    <CodeAnalysisRules Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'" />
++    <CodeAnalysisRuleAssemblies Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'" />
+     <TargetName Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">fbclient</TargetName>
++    <TargetName Condition="'$(Configuration)|$(Platform)'=='DebugStatic|Win32'">fbclient_static</TargetName>
+     <TargetName Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">fbclient</TargetName>
++    <TargetName Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'">fbclient_static</TargetName>
+     <TargetName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">fbclient</TargetName>
++    <TargetName Condition="'$(Configuration)|$(Platform)'=='DebugStatic|x64'">fbclient_static</TargetName>
+     <TargetName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">fbclient</TargetName>
++    <TargetName Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'">fbclient_static</TargetName>
+     <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\..\temp\$(PlatformName)\$(Configuration)\firebird\</OutDir>
+     <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\..\temp\$(PlatformName)\$(Configuration)\firebird\</OutDir>
+     <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\..\temp\$(PlatformName)\$(Configuration)\firebird\</OutDir>
+@@ -233,7 +331,40 @@
+       <SubSystem>Windows</SubSystem>
+     </Link>
+   </ItemDefinitionGroup>
++  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'">
++    <ClCompile>
++      <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;SUPERSERVER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
++    </ClCompile>
++  </ItemDefinitionGroup>
++  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='DebugStatic|Win32'">
++    <ClCompile>
++      <Optimization>Disabled</Optimization>
++      <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;DEV_BUILD;SUPERSERVER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
++      <PrecompiledHeader>
++      </PrecompiledHeader>
++      <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
++    </ClCompile>
++  </ItemDefinitionGroup>
++  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'">
++    <Midl>
++      <TargetEnvironment>X64</TargetEnvironment>
++    </Midl>
++    <ClCompile>
++      <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;SUPERSERVER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
++    </ClCompile>
++  </ItemDefinitionGroup>
++  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='DebugStatic|x64'">
++    <Midl>
++      <TargetEnvironment>X64</TargetEnvironment>
++    </Midl>
++    <ClCompile>
++      <Optimization>Disabled</Optimization>
++      <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;DEV_BUILD;SUPERSERVER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
++      <PrecompiledHeader>
++      </PrecompiledHeader>
++    </ClCompile>
++  </ItemDefinitionGroup>
+   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+   <ImportGroup Label="ExtensionTargets">
+   </ImportGroup>
+-</Project>
+\ No newline at end of file
++</Project>
+diff --git a/builds/win32/setenvvar.bat b/builds/win32/setenvvar.bat
+index 6e78fd0c17..3d62e40736 100644
+--- a/builds/win32/setenvvar.bat
++++ b/builds/win32/setenvvar.bat
+@@ -11,13 +11,80 @@
+ 
+ set FB_CLEAN=
+ 
+-for %%v in ( %* )  do (
+-  ( if /I "%%v"=="DEBUG" ( (set FB_DBG=TRUE) && (set FB_CONFIG=debug) ) )
+-  ( if /I "%%v"=="CLEAN" (set FB_CLEAN=:rebuild) )
+-  ( if /I "%%v"=="RELEASE" ( (set FB_DBG=) && (set FB_CONFIG=release) ) )
+-  ( if /I "%%v"=="CLIENT_ONLY" (set FB_CLIENT_ONLY=TRUE) )
+-  ( if /I "%%v"=="CLIENT_ONLY=FALSE" (set FB_CLIENT_ONLY=) )
++:: Parse args with SHIFT /1 rather than "for %%v in (%*)".
++:: cmd.exe treats '=' as a parameter delimiter, so unquoted CLIENT_ONLY=STATIC
++:: arrives as two tokens (CLIENT_ONLY and STATIC). A for-loop over %* has the
++:: same problem. Handle both the split form and a quoted "CLIENT_ONLY=...".
++:: Use SHIFT /1 (not plain SHIFT) so %0 / %~dp0 stay as this script's path;
++:: plain SHIFT moves %1 into %0, which breaks "cd %~dp0" later in this file.
++:parse_args
++if "%~1"=="" goto :parse_args_done
++
++if /I "%~1"=="DEBUG" (
++  set FB_DBG=TRUE
++  set FB_CONFIG=debug
++  shift /1
++  goto :parse_args
+ )
++if /I "%~1"=="CLEAN" (
++  set FB_CLEAN=:rebuild
++  shift /1
++  goto :parse_args
++)
++if /I "%~1"=="RELEASE" (
++  set FB_DBG=
++  set FB_CONFIG=release
++  shift /1
++  goto :parse_args
++)
++
++:: Quoted form: "CLIENT_ONLY=STATIC" (or DLL / FALSE)
++if /I "%~1"=="CLIENT_ONLY=STATIC" (
++  set FB_CLIENT_ONLY=STATIC
++  shift /1
++  goto :parse_args
++)
++if /I "%~1"=="CLIENT_ONLY=DLL" (
++  set FB_CLIENT_ONLY=DLL
++  shift /1
++  goto :parse_args
++)
++if /I "%~1"=="CLIENT_ONLY=FALSE" (
++  set FB_CLIENT_ONLY=
++  shift /1
++  goto :parse_args
++)
++
++:: Unquoted CLIENT_ONLY=VALUE is split into CLIENT_ONLY + VALUE
++if /I "%~1"=="CLIENT_ONLY" (
++  if /I "%~2"=="STATIC" (
++    set FB_CLIENT_ONLY=STATIC
++    shift /1
++    shift /1
++    goto :parse_args
++  )
++  if /I "%~2"=="DLL" (
++    set FB_CLIENT_ONLY=DLL
++    shift /1
++    shift /1
++    goto :parse_args
++  )
++  if /I "%~2"=="FALSE" (
++    set FB_CLIENT_ONLY=
++    shift /1
++    shift /1
++    goto :parse_args
++  )
++  :: bare CLIENT_ONLY defaults to DLL
++  set FB_CLIENT_ONLY=DLL
++  shift /1
++  goto :parse_args
++)
++
++shift /1
++goto :parse_args
++
++:parse_args_done
+ 
+ @if not defined FB_CONFIG (
+   set FB_DBG=
+@@ -168,6 +235,17 @@ rem NOTE 2 This code is likely to break again in the future !!!!
+ @set FIREBIRD_BOOT_BUILD=1
+ 
+ @set FB_OBJ_DIR=%FB_TARGET_PLATFORM%\%FB_CONFIG%
++@if /I "%FB_CLIENT_ONLY%"=="STATIC" (
++  @if /I "%FB_DBG%"=="TRUE" (
++    @set FB_STATIC_CONFIG=DebugStatic
++  ) else (
++    @set FB_STATIC_CONFIG=ReleaseStatic
++  )
++  @set FB_STATIC_OBJ_DIR=%FB_TARGET_PLATFORM%\%FB_STATIC_CONFIG%
++) else (
++  @set FB_STATIC_CONFIG=
++  @set FB_STATIC_OBJ_DIR=
++)
+ @set FB_BIN_DIR=%FB_ROOT_PATH%\temp\%FB_OBJ_DIR%\firebird
+ 
+ 
+@@ -203,6 +281,9 @@ goto :END
+ @echo    vs_ver=%VS_VER%
+ @echo    FB_VSCOMNTOOLS=%FB_VSCOMNTOOLS%
+ @echo    platform=%FB_TARGET_PLATFORM%
++@if /I "%FB_CLIENT_ONLY%"=="STATIC" (
++  @echo    fbclient_static_config=%FB_STATIC_CONFIG%
++)
+ @echo    msvc_version=%MSVC_VERSION%
+ @echo    db_path=%FB_DB_PATH%
+ @echo    root_path=%FB_ROOT_PATH%
+diff --git a/configure.ac b/configure.ac
+index 32adf0ac86..6581616bac 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -896,6 +896,7 @@ AC_CHECK_TOOL([OBJCOPY], [objcopy])
+ AC_CHECK_TOOL([OBJDUMP], [objdump])
+ AC_CHECK_TOOL([RANLIB], [ranlib])
+ AC_CHECK_TOOL([READELF], [readelf])
++AC_CHECK_TOOL([NM], [nm])
+ LT_INIT([dlopen win32-dll])
+ 
+ dnl Check for system header files
+@@ -1013,6 +1014,9 @@ else
+ 		XE_RESTORE_ENV()
+ 	fi
+ fi
++if test "$WITH_TOMCRYPT" = "Y"; then
++	AC_DEFINE(HAVE_TOMCRYPT, 1, [Define this if libtomcrypt is in use])
++fi
+ AC_SUBST(CRYPTLIB)
+ 
+ dnl Check for termcap support
+@@ -1521,6 +1525,7 @@ fi
+ 
+ AC_CONFIG_FILES([
+ gen/vers.sh:builds/posix/vers.sh.in
++gen/static_client.sh:builds/posix/static_client.sh.in
+ ])
+ 
+ dnl: Platform Specific Files
+diff --git a/doc/README.StaticClient.md b/doc/README.StaticClient.md
+new file mode 100644
+index 0000000000..f8af6ba50a
+--- /dev/null
++++ b/doc/README.StaticClient.md
+@@ -0,0 +1,153 @@
++# Building and using a static `fbclient`
++
++Firebird's client library, `libfbclient`/`fbclient.dll`, is normally built and distributed only as a **shared** library.
++An optional, non-default static archive is now also available for applications that need to link the client library
++statically.
++
++## Why this is not the default
++
++Firebird overrides the global C++ operators `operator new`, `operator new[]`, `operator delete` and `operator delete[]`
++(see `src/common/classes/alloc.cpp`) so that any bare, non-pool `new`/`delete` expression - inside Firebird itself, or
++in foreign code linked into the *shared* client library - is routed through Firebird's own memory pool. This is safe in
++the shared library: the symbols are not re-exported (POSIX version script / Windows `.def` file), so an application
++linking against `libfbclient.so`/`fbclient.dll` keeps its own global operators untouched.
++
++A *static* archive has no such boundary: its object files are merged directly into the host application, and the linker
++would resolve the host's own bare `new`/`delete` to Firebird's definitions - silently hijacking all of the host
++application's allocations. To avoid this, the static build renames every internal global symbol — not just the global
++operators, but also decNumber symbols, C++ mangled names, internal helpers, etc. — to `__fbclient_*` names as a
++post-processing step on the archive, using `objcopy --redefine-syms` (GNU `objcopy` on Linux, `llvm-objcopy` on macOS).
++This frees the standard global operator names for the host application while keeping Firebird internally self-consistent
++(its own pool-routing logic in `MemoryPool::globalFree` still works, since foreign/system allocations of Firebird's own
++instances still flow through the renamed operators).
++
++Regular pool-based allocation via `FB_NEW`/`FB_NEW_POOL` (the idiomatic path used throughout the codebase) is unaffected
++- it never used the global operators to begin with.
++
++## Building on POSIX
++
++```sh
++make -C temp/debug TARGET=Debug client_static
++```
++
++`TARGET` (`Debug` or `Release`) defaults the same way the top-level `firebird` target does if omitted, but pass it
++explicitly - an empty/undefined `TARGET` elsewhere in a partial build (e.g. after only some sub-targets ran) can lead to
++mismatched paths.
++
++This produces `<firebird>/lib/libfbclient.a`, built from the same object set as the shared `libfbclient` (yValve +
++remote client + common).
++
++Link your application against it, along with the same system libraries the shared library depends on transitively
++(pthread, dl, crypt, rt, etc. as applicable to your platform). Most third-party dependencies (tommath, tomcrypt) are
++**not** bundled - link those directly if your final binary needs symbols from them.
++
++**`decNumber`/`libdecFloat` is the one exception**: it is small, vendored in-tree, and has no external system-library
++equivalent to conflict with, so its objects are merged directly into `libfbclient.a`/`fbclient_static.lib` - you do not
++need to separately link `-ldecFloat`/`decnumber.lib`.
++
++### Symbol collision prevention
++
++Firebird overrides the global C++ operators `operator new`, `operator new[]`, `operator delete` and `operator delete[]`
++(see `src/common/classes/alloc.cpp`). In a shared library, these symbols are hidden by the version script and don't
++conflict with the host application. In a static archive, all of Firebird's internal symbols — not just the global
++operators, but also decNumber symbols, C++ mangled names, internal helpers, etc. — would collide if they remain global.
++
++To prevent this, both ELF and Darwin builds use the same two-step post-processing pipeline:
++
++1. **Archive slimming** via `ld -r` with `-u` flags for every exported symbol from `builds/posix/firebird.vers`. The
++   linker pulls in only archive members transitively reachable from those seeds; a platform-specific cross-reference
++   output (GNU `--cref` on ELF, Apple `-map` on Darwin) identifies which members were pulled in, and only those
++   members are repacked into the archive.
++2. **Dynamic symbol renaming**: every defined global symbol NOT in the exported API list is renamed with a `__fbclient_`
++   prefix using `objcopy --redefine-syms` (GNU `objcopy` on ELF, `llvm-objcopy` on Darwin). The rename map is generated
++   automatically at build time:
++
++   ```
++   nm --defined-only -g libfbclient.a  |  extract symbol names  |  filter out API list  |  awk '{print $1, "__fbclient_" $1}'
++   ```
++
++   This covers every internal symbol automatically (decNumber, global operators, C++ vtables, typeinfo, guard
++   variables, etc.) without any hand-maintained lists. The multi-member archive structure is preserved, so COMDAT
++   groups and cross-member references work correctly at final link time.
++
++### Post-archive processing
++
++All of the post-archive processing (slimming, symbol rename, archive rebuild) is done by the unified helper script
++`static_client.sh` (autoconf-generated from `builds/posix/static_client.sh.in`). A single code path handles both
++ELF and Darwin, differing only in the `ld -r` cross-reference flag (selected by the make variable
++`STATIC_CLIENT_SLIM_MODE`).
++
++## Building on Windows
++
++Build the static client via the usual Windows scripts with `CLIENT_ONLY=STATIC`:
++
++```sh
++builds\win32\make_all.bat CLIENT_ONLY=STATIC
++```
++
++That builds `yvalve` as a static library (`fbclient_static.lib`) under `temp\<platform>\ReleaseStatic` (or
++`DebugStatic`), then runs `builds/win32/fix_fbclient_static.bat` to rename symbols with
++`llvm-objcopy --redefine-syms`. The rename map is generated automatically — no hand-maintained lists needed:
++
++1. Parse `builds/win32/defs/firebird.def` to extract the public API symbol names.
++2. Run `llvm-nm --defined-only -g` on every extracted `.obj` to collect all defined global symbols.
++3. For each symbol not in the API list, emit a rename pair mapping it to a `__fbclient_`-prefixed name (preserving
++   x86 `__stdcall` `@n` decoration where present). C++ mangled (`?`-prefixed) symbols are always renamed.
++4. Apply the single rename map across all objects with `llvm-objcopy --redefine-syms`.
++
++This covers every internal symbol automatically (global operators, decNumber, C++ vtables, typeinfo, guard variables,
++etc.) without any hand-maintained symbol lists or separate scripts. The script requires `llvm-objcopy` and `llvm-nm`
++to be available on `PATH`. `decnumber.lib` is merged into the static archive via `<Lib><AdditionalDependencies>`
++(MSVC's librarian merges a referenced `.lib`'s members into a new static-library archive when specified this way).
++
++## Verifying the symbol rename worked
++
++The public API should remain global under original names:
++
++```sh
++nm libfbclient.a | grep ' T isc_'
++```
++
++should show all `isc_*` symbols as global (`T`).
++
++Internal symbols should be renamed with the `__fbclient_` prefix:
++
++```sh
++nm libfbclient.a | grep ' T __fbclient_' | wc -l
++```
++
++should show a large number of renamed symbols (thousands).
++
++Global operators should no longer exist under their original names:
++
++```sh
++nm libfbclient.a | grep -E ' _Znwm| _Znam| _ZdlPv| _ZdaPv' | grep -c ' T '
++```
++
++should show `0` — all have been renamed to `__fbclient_*` variants.
++
++decNumber symbols should also be renamed:
++
++```sh
++nm libfbclient.a | grep ' T decNumberFromString'
++```
++
++should show nothing — it's now `__fbclient_decNumberFromString`.
++
++## Windows-specific behavior: no `DllMain`
++
++On Windows, the shared `fbclient.dll` has a `DllMain` (`src/jrd/os/win32/ibinitdll.cpp`) that reacts to OS loader
++notifications and sets a few globals in `src/common/dllinst.h`/`.cpp` (`Firebird::hDllInst`, `bDllProcessExiting`,
++`dDllUnloadTID`). A statically linked `fbclient` has no separate module, so no `DllMain` ever runs for it.
++
++This is safe: everywhere these globals are read, the code either already falls back correctly when they're at their
++default `0`/`false` (e.g. the config-root lookup falls back to the host executable's own path; the loader-lock-hazard
++checks simply never trigger, which is correct since a statically linked EXE never faces the DLL-unload-under-loader-lock
++hazard they guard against), or is explicitly guarded to skip DLL-only work (`MasterImplementation.cpp`'s timer-thread
++refcount bump on `fbclient.dll`).
++
++The one real functional gap this closes: per-thread cleanup used to run *only* from `DllMain`'s `DLL_THREAD_DETACH`
++case, which never fires without a real DLL. This is now handled uniformly for both the DLL and the static build using
++Fiber-Local Storage (`FlsAlloc`/`FlsSetValue`/`FlsFree`) in `ThreadCleanup` (`src/yvalve/utl.cpp`) - the FLS callback
++fires on thread exit for any thread that touched the slot, regardless of whether the code is in a DLL or linked directly
++into the host application, mirroring what `pthread_key_create`'s destructor already gives the POSIX build for free.
+diff --git a/src/common/classes/Hash.h b/src/common/classes/Hash.h
+index fe7b3cc9d3..34f5a50271 100644
+--- a/src/common/classes/Hash.h
++++ b/src/common/classes/Hash.h
+@@ -365,6 +365,7 @@ namespace Firebird
+ 		SINT64 hashNumber = 0;
+ 	};
+ 
++#if defined(HAVE_TOMCRYPT)
+ 	class LibTomCryptHashContext : public HashContext
+ 	{
+ 	public:
+@@ -451,6 +452,7 @@ namespace Firebird
+ 		State* statePtr;
+ 		SLONG hash;
+ 	};
++#endif // HAVE_TOMCRYPT
+ 
+ } // namespace Firebird
+ 
+diff --git a/src/common/classes/ThreadCleanup.cpp b/src/common/classes/ThreadCleanup.cpp
+new file mode 100644
+index 0000000000..2baa48d903
+--- /dev/null
++++ b/src/common/classes/ThreadCleanup.cpp
+@@ -0,0 +1,115 @@
++/*
++ *  The contents of this file are subject to the Initial
++ *  Developer's Public License Version 1.0 (the "License");
++ *  you may not use this file except in compliance with the
++ *  License. You may obtain a copy of the License at
++ *  http://www.ibphoenix.com/main.nfs?a=ibphoenix&page=ibp_idpl.
++ *
++ *  Software distributed under the License is distributed AS IS,
++ *  WITHOUT WARRANTY OF ANY KIND, either express or implied.
++ *  See the License for the specific language governing rights
++ *  and limitations under the License.
++ *
++ *  The Original Code was created by Adriano dos Santos Fernandes
++ *  for the Firebird Open Source RDBMS project.
++ *
++ *  Copyright (c) 2026 Adriano dos Santos Fernandes <adrianosf@gmail.com>
++ *  and all contributors signed below.
++ *
++ *  All Rights Reserved.
++ *  Contributor(s): ______________________________________.
++ */
++
++#include "firebird.h"
++#include "../common/classes/ThreadCleanup.h"
++#include "fb_exception.h"
++#include "../yvalve/gds_proto.h"
++
++#ifdef WIN_NT
++#include <windows.h>
++#endif
++
++namespace Firebird {
++
++#ifdef WIN_NT
++
++static void WINAPI flsCallbackThunk(PVOID value)
++{
++	ThreadCleanupCallback::trampoline(value);
++}
++
++ThreadCleanupCallback::ThreadCleanupCallback(MemoryPool&, Callback aCallback, void* aArg)
++	: callback(aCallback),
++	  arg(aArg)
++{
++	flsIndex = FlsAlloc(flsCallbackThunk);
++
++	if (flsIndex == FLS_OUT_OF_INDEXES)
++		system_call_failed::raise("FlsAlloc");
++}
++
++ThreadCleanupCallback::~ThreadCleanupCallback()
++{
++	if (flsIndex != FLS_OUT_OF_INDEXES)
++	{
++		FlsFree(flsIndex);
++		flsIndex = FLS_OUT_OF_INDEXES;
++	}
++}
++
++void ThreadCleanupCallback::enable()
++{
++	// Any non-NULL value causes the OS to invoke trampoline for this thread at thread exit
++	// (or FlsFree).
++	if (!FlsSetValue(flsIndex, this))
++		system_call_failed::raise("FlsSetValue");
++}
++
++void ThreadCleanupCallback::disable()
++{
++	FlsSetValue(flsIndex, nullptr);
++}
++
++#else // !WIN_NT
++
++ThreadCleanupCallback::ThreadCleanupCallback(MemoryPool&, Callback aCallback, void* aArg)
++	: callback(aCallback),
++	  arg(aArg)
++{
++	int err = pthread_key_create(&key, &ThreadCleanupCallback::trampoline);
++
++	if (err)
++		system_call_failed::raise("pthread_key_create", err);
++}
++
++ThreadCleanupCallback::~ThreadCleanupCallback()
++{
++	int err = pthread_key_delete(key);
++
++	if (err)
++		gds__log("pthread_key_delete failed with error %d", err);
++}
++
++void ThreadCleanupCallback::enable()
++{
++	// Any non-NULL value causes the OS to invoke trampoline for this thread at thread exit.
++	int err = pthread_setspecific(key, this);
++
++	if (err)
++		system_call_failed::raise("pthread_setspecific", err);
++}
++
++void ThreadCleanupCallback::disable()
++{
++	pthread_setspecific(key, nullptr);
++}
++
++#endif // WIN_NT
++
++void ThreadCleanupCallback::trampoline(void* value)
++{
++	if (value)
++		static_cast<ThreadCleanupCallback*>(value)->callback(static_cast<ThreadCleanupCallback*>(value)->arg);
++}
++
++} // namespace Firebird
+diff --git a/src/common/classes/ThreadCleanup.h b/src/common/classes/ThreadCleanup.h
+new file mode 100644
+index 0000000000..70524db8d5
+--- /dev/null
++++ b/src/common/classes/ThreadCleanup.h
+@@ -0,0 +1,79 @@
++/*
++ *  The contents of this file are subject to the Initial
++ *  Developer's Public License Version 1.0 (the "License");
++ *  you may not use this file except in compliance with the
++ *  License. You may obtain a copy of the License at
++ *  http://www.ibphoenix.com/main.nfs?a=ibphoenix&page=ibp_idpl.
++ *
++ *  Software distributed under the License is distributed AS IS,
++ *  WITHOUT WARRANTY OF ANY KIND, either express or implied.
++ *  See the License for the specific language governing rights
++ *  and limitations under the License.
++ *
++ *  The Original Code was created by Adriano dos Santos Fernandes
++ *  for the Firebird Open Source RDBMS project.
++ *
++ *  Copyright (c) 2026 Adriano dos Santos Fernandes <adrianosf@gmail.com>
++ *  and all contributors signed below.
++ *
++ *  All Rights Reserved.
++ *  Contributor(s): ______________________________________.
++ */
++
++#ifndef CLASSES_THREAD_CLEANUP_H
++#define CLASSES_THREAD_CLEANUP_H
++
++#include "firebird.h"
++
++#ifdef WIN_NT
++#include <windows.h>
++#else
++#include "fb_pthread.h"
++#endif
++
++namespace Firebird {
++
++class MemoryPool;
++
++// Registers a callback that fires once for the current thread when it exits, using
++// pthread_key_create's destructor on POSIX or Fiber-Local Storage on Windows (FLS is used
++// instead of DllMain's DLL_THREAD_DETACH because its callback fires on thread exit for any
++// thread that touched the slot, whether this code is linked into a DLL or statically into the
++// host application - unlike DLL_THREAD_DETACH, which never fires at all when there is no
++// separate DLL).
++class ThreadCleanupCallback
++{
++public:
++	typedef void (*Callback)(void*);
++
++public:
++	ThreadCleanupCallback(MemoryPool&, Callback callback, void* arg = nullptr);
++	~ThreadCleanupCallback();
++
++	ThreadCleanupCallback(const ThreadCleanupCallback&) = delete;
++	ThreadCleanupCallback& operator=(const ThreadCleanupCallback&) = delete;
++
++public:
++	// Arms the current thread: callback(arg) runs once when it exits.
++	void enable();
++
++	// Disarms the current thread.
++	void disable();
++
++	// Public so platform-specific callback thunks can forward to it; not for general use.
++	static void trampoline(void* value);
++
++private:
++	Callback callback;
++	void* arg;
++
++#ifdef WIN_NT
++	DWORD flsIndex;
++#else
++	pthread_key_t key;
++#endif
++};
++
++} // namespace Firebird
++
++#endif // CLASSES_THREAD_CLEANUP_H
+diff --git a/src/common/classes/TomCryptHash.cpp b/src/common/classes/TomCryptHash.cpp
+index 1816cc0d52..6baecbcbd0 100644
+--- a/src/common/classes/TomCryptHash.cpp
++++ b/src/common/classes/TomCryptHash.cpp
+@@ -23,6 +23,9 @@
+  */
+ 
+ #include "firebird.h"
++
++#if defined(HAVE_TOMCRYPT)
++
+ #include "../common/classes/Hash.h"
+ #include "../common/dsc.h"
+ #include "../intl/charsets.h"
+@@ -163,3 +166,4 @@ void Crc32HashContext::finish(dsc& result)
+ 	result.makeLong(0, &hash);
+ }
+ 
++#endif // HAVE_TOMCRYPT
+diff --git a/src/common/classes/init.h b/src/common/classes/init.h
+index 7b26f63150..e5555a705e 100644
+--- a/src/common/classes/init.h
++++ b/src/common/classes/init.h
+@@ -147,6 +147,13 @@ public:
+ 		FB_NEW InstanceControl::InstanceLink<GlobalPtr, P>(this);
+ 	}
+ 
++	template <typename TFunc, std::enable_if_t<std::is_invocable_r_v<T*, TFunc, MemoryPool&>, int> = 0>
++	GlobalPtr(TFunc initializationFunc)
++	{
++		instance = initializationFunc(*getDefaultMemoryPool());
++		FB_NEW InstanceControl::InstanceLink<GlobalPtr, P>(this);
++	}
++
+ 	T* operator->() throw()
+ 	{
+ 		return instance;
+diff --git a/src/common/os/win32/mod_loader.cpp b/src/common/os/win32/mod_loader.cpp
+index c4418feceb..5860a6723f 100644
+--- a/src/common/os/win32/mod_loader.cpp
++++ b/src/common/os/win32/mod_loader.cpp
+@@ -60,6 +60,24 @@ private:
+ 
+ const char* const KERNEL32_DLL = "kernel32.dll";
+ 
++// Our own containing module (the DLL, or the host EXE when fbclient is
++// linked statically) never changes during the process lifetime, so look it
++// up via GetModuleHandleEx(..._FROM_ADDRESS...).
++static HMODULE getOwnModuleHandle() noexcept
++{
++	static const HMODULE hModule = []() noexcept
++	{
++		HMODULE h = nullptr;
++		GetModuleHandleExA(
++			GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
++			(LPCSTR) &getOwnModuleHandle,
++			&h);
++		return h;
++	}();
++
++	return hModule;
++}
++
+ 
+ class ContextActivator
+ {
+@@ -125,7 +143,7 @@ public:
+ 		actCtx.cbSize = sizeof(actCtx);
+ 		actCtx.dwFlags = ACTCTX_FLAG_RESOURCE_NAME_VALID | ACTCTX_FLAG_HMODULE_VALID;
+ 		actCtx.lpResourceName = ISOLATIONAWARE_MANIFEST_RESOURCE_ID;
+-		actCtx.hModule = Firebird::hDllInst;
++		actCtx.hModule = getOwnModuleHandle();
+ 
+ 		if (actCtx.hModule)
+ 		{
+diff --git a/src/include/gen/autoconfig.h.in b/src/include/gen/autoconfig.h.in
+index 709c100c8a..78a8294e50 100644
+--- a/src/include/gen/autoconfig.h.in
++++ b/src/include/gen/autoconfig.h.in
+@@ -378,6 +378,9 @@
+ /* Define to 1 if you have the <zlib.h> header file. */
+ #cmakedefine HAVE_ZLIB_H 1
+ 
++/* Define to 1 if libtomcrypt is in use. */
++#cmakedefine HAVE_TOMCRYPT 1
++
+ 
+ /******************************************************************************
+  *
+diff --git a/src/include/gen/autoconfig_msvc.h b/src/include/gen/autoconfig_msvc.h
+index 1e25478c64..c969ad9271 100644
+--- a/src/include/gen/autoconfig_msvc.h
++++ b/src/include/gen/autoconfig_msvc.h
+@@ -157,6 +157,7 @@
+ #undef HAVE_WINSOCK2_H
+ #define HAVE_FLOAT_H
+ #define HAVE_ZLIB_H
++#define HAVE_TOMCRYPT
+ 
+ /* Functions */
+ #undef HAVE_GETTIMEOFDAY
+diff --git a/src/jrd/os/win32/ibinitdll.cpp b/src/jrd/os/win32/ibinitdll.cpp
+index 7ea8106e93..b048a512bb 100644
+--- a/src/jrd/os/win32/ibinitdll.cpp
++++ b/src/jrd/os/win32/ibinitdll.cpp
+@@ -25,12 +25,19 @@
+ #include "firebird.h"
+ #include <windows.h>
+ #include "../../../common/dllinst.h"
+-#include "../../../yvalve/utl_proto.h"
+ 
+ 
+ using namespace Firebird;
+ 
+ 
++// Per-thread cleanup used to run from the DLL_THREAD_DETACH case here, but
++// that only ever fires when this code is actually linked into a real DLL.
++// It is now handled uniformly (DLL or static build) via Fiber-Local Storage -
++// see ThreadCleanup in yvalve/utl.cpp. This DllMain is therefore not compiled
++// into the static client library (see fbclient_static.vcxproj) - hDllInst,
++// bDllProcessExiting and dDllUnloadTID simply keep their safe default values
++// (0 / false) in that build, which is the correct behavior for code linked
++// directly into the host application (see doc/README.StaticClient.md).
+ BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID reserved)
+ {
+ 	switch (reason)
+@@ -39,12 +46,6 @@ BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID reserved)
+ 			hDllInst = h;
+ 			break;
+ 
+-		case DLL_THREAD_DETACH:
+-		{
+-			Why::threadCleanup();
+-			break;
+-		}
+-
+ 		case DLL_PROCESS_DETACH:
+ 			bDllProcessExiting = (reserved != NULL);
+ 			dDllUnloadTID = GetCurrentThreadId();
+diff --git a/src/yvalve/MasterImplementation.cpp b/src/yvalve/MasterImplementation.cpp
+index d8ec299dbc..f23066bdc8 100644
+--- a/src/yvalve/MasterImplementation.cpp
++++ b/src/yvalve/MasterImplementation.cpp
+@@ -251,10 +251,20 @@ THREAD_ENTRY_DECLARE TimerEntry::timeThread(THREAD_ENTRY_PARAM)
+ 	// and the code that is currently running, leading to AV.
+ 	// To prevent such scenario we increment usage count of fbclient.dll and
+ 	// will decrement it in safe way at the end of the timer thread.
++	//
++	// hDllInst is 0 when fbclient is statically linked into the host
++	// application (there is no separate DLL to be unloaded out from under us
++	// this way - an EXE's own main module isn't unloaded this way), so skip
++	// the whole workaround in that case.
+ 
+-	char buff[MAX_PATH];
+-	GetModuleFileName(hDllInst, buff, sizeof(buff));
+-	HMODULE hDll = LoadLibrary(buff);
++	HMODULE hDll = nullptr;
++
++	if (Firebird::hDllInst)
++	{
++		char buff[MAX_PATH];
++		GetModuleFileName(hDllInst, buff, sizeof(buff));
++		hDll = LoadLibrary(buff);
++	}
+ #endif
+ 
+ 	while (stopTimerThread.value() == 0
+@@ -306,15 +316,18 @@ THREAD_ENTRY_DECLARE TimerEntry::timeThread(THREAD_ENTRY_PARAM)
+ 	timerCleanup->release();
+ 
+ #ifdef WIN_NT
+-	if (Firebird::dDllUnloadTID)
++	if (hDll)
+ 	{
+-		// fb_shutdown is called as result of FreeLibrary, not by application.
+-		// Sooner of all we are the last user of fbclient.dll, and code will be
+-		// physically unloaded as result of FreeLibrary() call.
+-		FreeLibraryAndExitThread(hDll, 0);
++		if (Firebird::dDllUnloadTID)
++		{
++			// fb_shutdown is called as result of FreeLibrary, not by application.
++			// Sooner of all we are the last user of fbclient.dll, and code will be
++			// physically unloaded as result of FreeLibrary() call.
++			FreeLibraryAndExitThread(hDll, 0);
++		}
++		else
++			FreeLibrary(hDll);	// It is safe to decrement usage count here
+ 	}
+-	else
+-		FreeLibrary(hDll);	// It is safe to decrement usage count here
+ #endif
+ 
+ 	return 0;
+diff --git a/src/yvalve/utl.cpp b/src/yvalve/utl.cpp
+index 00985d616b..3d9f607345 100644
+--- a/src/yvalve/utl.cpp
++++ b/src/yvalve/utl.cpp
+@@ -70,6 +70,7 @@
+ #include "../common/StatusHolder.h"
+ #include "../common/classes/ImplementHelper.h"
+ #include "../common/classes/fb_tls.h"
++#include "../common/classes/ThreadCleanup.h"
+ #include "../common/os/os_utils.h"
+ 
+ #ifdef HAVE_UNISTD_H
+@@ -3230,10 +3231,6 @@ void setLogin(ClumpletWriter& dpb, bool spbFlag)
+ // circularAlloc()
+ //
+ 
+-#ifdef WIN_NT
+-#include <windows.h>
+-#endif
+-
+ namespace {
+ 
+ class ThreadCleanup
+@@ -3268,44 +3265,21 @@ private:
+ ThreadCleanup* ThreadCleanup::chain = NULL;
+ GlobalPtr<Mutex> ThreadCleanup::cleanupMutex;
+ 
+-#ifdef USE_POSIX_THREADS
+-
+-pthread_key_t key;
+-pthread_once_t keyOnce = PTHREAD_ONCE_INIT;
+-bool keySet = false;
+-
+-void makeKey()
+-{
+-	int err = pthread_key_create(&key, ThreadCleanup::destructor);
+-	if (err)
+-	{
+-		Firebird::system_call_failed::raise("pthread_key_create", err);
+-	}
+-	keySet = true;
+-}
++GlobalPtr<ThreadCleanupCallback> threadExitCallback([] (MemoryPool& p) {
++	return FB_NEW_POOL(p) ThreadCleanupCallback(p, ThreadCleanup::destructor);
++});
+ 
+ void ThreadCleanup::initThreadCleanup()
+ {
+-	int err = pthread_once(&keyOnce, makeKey);
+-	if (err)
+-	{
+-		Firebird::system_call_failed::raise("pthread_once", err);
+-	}
+-
+-	err = pthread_setspecific(key, &key);
+-	if (err)
+-	{
+-		Firebird::system_call_failed::raise("pthread_setspecific", err);
+-	}
++	threadExitCallback->enable();
+ }
+ 
+ void ThreadCleanup::finiThreadCleanup()
+ {
+-	pthread_setspecific(key, NULL);
++	threadExitCallback->disable();
+ 	PluginManager::threadDetach();
+ }
+ 
+-
+ class FiniThreadCleanup
+ {
+ public:
+@@ -3315,30 +3289,11 @@ public:
+ 	~FiniThreadCleanup()
+ 	{
+ 		ThreadCleanup::assertNoCleanupChain();
+-		if (keySet)
+-		{
+-			int err = pthread_key_delete(key);
+-			if (err)
+-				gds__log("pthread_key_delete failed with error %d", err);
+-		}
+ 	}
+ };
+ 
+ Firebird::GlobalPtr<FiniThreadCleanup> thrCleanup;		// needed to call dtor
+ 
+-#endif // USE_POSIX_THREADS
+-
+-#ifdef WIN_NT
+-void ThreadCleanup::initThreadCleanup()
+-{
+-}
+-
+-void ThreadCleanup::finiThreadCleanup()
+-{
+-	PluginManager::threadDetach();
+-}
+-#endif // #ifdef WIN_NT
+-
+ ThreadCleanup** ThreadCleanup::findCleanup(FPTR_VOID_PTR cleanup, void* arg)
+ {
+ 	for (ThreadCleanup** ptr = &chain; *ptr; ptr = &((*ptr)->next))
+@@ -3537,14 +3492,3 @@ void makePermanentVector(ISC_STATUS* v) throw()
+ {
+ 	makePermanentVector(v, v);
+ }
+-
+-#ifdef WIN_NT
+-namespace Why
+-{
+-	// This is called from ibinitdll.cpp:DllMain()
+-	void threadCleanup()
+-	{
+-		ThreadCleanup::destructor(NULL);
+-	}
+-}
+-#endif
+diff --git a/src/yvalve/utl_proto.h b/src/yvalve/utl_proto.h
+index 900e5df882..cc25c2cc5f 100644
+--- a/src/yvalve/utl_proto.h
++++ b/src/yvalve/utl_proto.h
+@@ -87,9 +87,4 @@ void makePermanentVector(ISC_STATUS* v) throw();
+ void UTL_get_ods_version(Firebird::CheckStatusWrapper* status, Firebird::IAttachment* att,
+ 	USHORT* ods_version, USHORT* ods_minor_version);
+ 
+-namespace Why
+-{
+-	void threadCleanup();
+-}
+-
+ #endif // JRD_UTL_PROTO_H
