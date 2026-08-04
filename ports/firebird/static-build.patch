@@ -1,6 +1,6 @@
 diff --git a/.github/workflows/static-build.yml b/.github/workflows/static-build.yml
 new file mode 100644
-index 0000000000..69751002e6
+index 0000000000..6bdff47401
 --- /dev/null
 +++ b/.github/workflows/static-build.yml
 @@ -0,0 +1,240 @@
@@ -58,7 +58,7 @@ index 0000000000..69751002e6
 +            -I/home/ctng/firebird-build/gen/Release/firebird/include \
 +            -L/home/ctng/firebird-build/gen/Release/firebird/lib \
 +            -L/home/ctng/firebird-build/temp/Release \
-+            -lfbclient -ltommath -lz -ldl -pthread \
++            -lfbclient -ltommath -ltomcrypt -lz -ldl -pthread \
 +            -o /tmp/01.create
 +          EOF
 +          chmod +x /tmp/build-static-client.sh
@@ -111,7 +111,7 @@ index 0000000000..69751002e6
 +            -Igen/Release/firebird/include \
 +            -Lgen/Release/firebird/lib \
 +            -Ltemp/Release \
-+            -lfbclient -ltommath -lz -ldl -pthread \
++            -lfbclient -ltommath -ltomcrypt -lz -ldl -pthread \
 +            -o /tmp/01.create
 +
 +      - name: Upload static library
@@ -165,7 +165,7 @@ index 0000000000..69751002e6
 +            -Igen/Release/firebird/include \
 +            -Lgen/Release/firebird/lib \
 +            -Ltemp/Release \
-+            -lfbclient -ltommath -lz \
++            -lfbclient -ltommath -ltomcrypt -lz \
 +            -liconv -lobjc -framework CoreFoundation -framework Foundation -framework Security \
 +            -o /tmp/01.create
 +
@@ -237,7 +237,7 @@ index 0000000000..69751002e6
 +          VS_SCRIPT: C:\Program Files\Microsoft Visual Studio\18\Enterprise\Common7\Tools\VsDevCmd.bat
 +        run: |
 +          call "%VS_SCRIPT%" -arch=%FB_VS_ARCH%
-+          cl /nologo /EHsc /MD /Isrc\include /Ioutput_%FB_LIBRARY_PLATFORM%_release\include examples\interfaces\01.create.cpp output_%FB_LIBRARY_PLATFORM%_release\lib\fbclient_static_ms.lib extern\libtommath\lib\%FB_LIBRARY_PLATFORM%\Release\tommath.lib advapi32.lib bcrypt.lib legacy_stdio_definitions.lib mpr.lib ole32.lib psapi.lib shell32.lib user32.lib ws2_32.lib /Fe:%TEMP%\01.create.exe
++          cl /nologo /EHsc /MD /Isrc\include /Ioutput_%FB_LIBRARY_PLATFORM%_release\include examples\interfaces\01.create.cpp output_%FB_LIBRARY_PLATFORM%_release\lib\fbclient_static_ms.lib extern\libtommath\lib\%FB_LIBRARY_PLATFORM%\Release\tommath.lib extern\libtomcrypt\lib\%FB_LIBRARY_PLATFORM%\Release\tomcrypt.lib advapi32.lib bcrypt.lib legacy_stdio_definitions.lib mpr.lib ole32.lib psapi.lib shell32.lib user32.lib ws2_32.lib /Fe:%TEMP%\01.create.exe
 +
 +      - name: Upload static library
 +        uses: actions/upload-artifact@v4
@@ -257,7 +257,7 @@ index 9faa0e50eb..75db4b9726 100644
  string(TOUPPER ${CMAKE_SYSTEM_NAME} CMAKE_SYSTEM_NAME_UPPER)
  set(${CMAKE_SYSTEM_NAME_UPPER} 1)
 diff --git a/builds/posix/Makefile.in b/builds/posix/Makefile.in
-index 8f698b0a2a..9339023de2 100644
+index 8f698b0a2a..104288aff3 100644
 --- a/builds/posix/Makefile.in
 +++ b/builds/posix/Makefile.in
 @@ -254,7 +254,7 @@ endif
@@ -269,7 +269,7 @@ index 8f698b0a2a..9339023de2 100644
  
  export_lists: $(ALLVERS)
  
-@@ -465,6 +465,55 @@ $(LIBFIREBIRD_FULLNAME):	$(YValve_Objects) $(Remote_Client_Objects) $(COMMON_LIB
+@@ -465,6 +465,64 @@ $(LIBFIREBIRD_FULLNAME):	$(YValve_Objects) $(Remote_Client_Objects) $(COMMON_LIB
  	$(LINK_FIREBIRD) -o $@ $^ $(LINK_FIREBIRD_LIBS) $(call LIB_LINK_DARWIN_INSTALL_NAME,lib/libfbclient.$(SHRLIB_EXT))
  
  
@@ -299,16 +299,25 @@ index 8f698b0a2a..9339023de2 100644
 +	$(MAKE) updateCloopInterfaces
 +	$(MAKE) rest
 +	$(MAKE) $(LIBFIREBIRD_STATIC)
-+ifeq ($(WITH_TOMCRYPT),Y)
-+	$(MAKE) chacha
-+endif
 +	$(MAKE) include_generic
++
++$(Static_Client_Interface_Object): $(SRC_ROOT)/remote/client/interface.cpp
++	mkdir -p $(@D)
++	$(CXX) $(WCXXFLAGS) -DSTATIC_CLIENT -c $(firstword $<) -o $@
++	@sed $(INLINE_EDIT_SED) -e "1,2s/:/: \$$(wildcard/" -e "\$$s/\(.*\)/\\1)/" $(patsubst %.o,%.d,$@)
++
++STATIC_CLIENT_PLUGIN_OBJECTS=
++ifeq ($(WITH_TOMCRYPT),Y)
++STATIC_CLIENT_PLUGIN_OBJECTS += $(Chacha_Objects)
++endif
 +
 +STATIC_CLIENT_SLIM_STAGE = $(ROOT)/temp/static_client_stage
 +STATIC_CLIENT_SLIM_CREF  = $(ROOT)/temp/static_client_cref.txt
 +STATIC_CLIENT_SLIM_PROBE = $(ROOT)/temp/static_client_probe.o
 +
-+$(LIBFIREBIRD_STATIC):	$(YValve_Objects) $(Remote_Client_Objects) $(Common_Objects) \
++
++$(LIBFIREBIRD_STATIC):	$(YValve_Objects) $(Static_Client_Remote_Client_Objects) $(Common_Objects) \
++			$(STATIC_CLIENT_PLUGIN_OBJECTS) \
 +			| $(GEN_ROOT)/$(FIREBIRD_VERS)
 +	-$(RM) $@
 +	$(STATICLIB_LINK) $@ $^ $(ROOT)/temp/extern/decNumber/*.o
@@ -325,7 +334,7 @@ index 8f698b0a2a..9339023de2 100644
  #___________________________________________________________________________
  # core part - jrd's engine
  #
-@@ -910,6 +959,7 @@ clean_makefiles:
+@@ -910,6 +968,7 @@ clean_makefiles:
  	$(RM) $(GEN_ROOT)/make*
  	-$(RM) $(GEN_ROOT)/darwin.defaults
  	-$(RM) $(GEN_ROOT)/vers.sh
@@ -391,12 +400,32 @@ index 0d5717dde4..580f899b77 100755
  # The firebird engine library name
  
  EngineFileName=libEngine${OdsVersion}
+diff --git a/builds/posix/make.shared.variables b/builds/posix/make.shared.variables
+index cccded7b52..f55db6a793 100644
+--- a/builds/posix/make.shared.variables
++++ b/builds/posix/make.shared.variables
+@@ -74,7 +74,15 @@ Remote_Client:= $(call dirObjects,remote/client) $(call dirObjects,auth/SecureRe
+ Remote_Server_Objects:= $(Remote_Common) $(Remote_Server)
+ Remote_Client_Objects:= $(Remote_Common) $(Remote_Client)
+ 
++# The static client uses a separate remote client interface object to register
++# plugins that are compiled into the static archive without changing the
++# shared client library's plugin loading behavior.
++Static_Client_Interface_Object:= $(OBJ)/static-client/remote/client/interface.o
++Static_Client_Remote_Client_Objects:= $(filter-out $(OBJ)/remote/client/interface.o,$(Remote_Client_Objects)) \
++	$(Static_Client_Interface_Object)
++
+ AllObjects += $(Remote_Common) $(Remote_Server) $(Remote_Client)
++AllObjects += $(Static_Client_Interface_Object)
+ 
+ 
+ # Chacha plugin
 diff --git a/builds/posix/static_client.sh.in b/builds/posix/static_client.sh.in
 new file mode 100644
-index 0000000000..7960599ecf
+index 0000000000..38b55d36c1
 --- /dev/null
 +++ b/builds/posix/static_client.sh.in
-@@ -0,0 +1,175 @@
+@@ -0,0 +1,187 @@
 +#!/bin/sh
 +#
 +#  The contents of this file are subject to the Initial
@@ -458,6 +487,7 @@ index 0000000000..7960599ecf
 +NM=@NM@
 +LD=@CXX@
 +AR=@AR@
++READELF=@READELF@
 +
 +ARCHIVE=
 +SEEDS_FILE=
@@ -550,9 +580,11 @@ index 0000000000..7960599ecf
 +
 +# Step 3: Generate a comprehensive rename map for every defined
 +# global symbol in the slimmed archive that is NOT in the exported
-+# API. Each such symbol gets a "__fbclient_" prefix so it won't
-+# collide with the host application's own symbols (e.g. global
-+# operator new/delete, decNumber symbols, internal C++ symbols).
++# API. On ELF, also include COMDAT group signatures, which are local
++# symbols and therefore not reported by nm -g. Each such symbol gets
++# a "__fbclient_" prefix so it won't collide with the host application's
++# own symbols (e.g. global operator new/delete, decNumber symbols,
++# internal C++ symbols).
 +#
 +# On ELF, nm emits bare C names (gds__alloc); on Mach-O it emits
 +# leading-underscore names (_gds__alloc). Both conventions are
@@ -560,9 +592,18 @@ index 0000000000..7960599ecf
 +# parsed above matches the nm output convention on each platform.
 +API_SYMS=$(mktemp)
 +REDEFINE=$(mktemp)
++DEFINED_SYMS=$(mktemp)
 +printf '%s\n' $SEEDS > "$API_SYMS"
 +$NM --defined-only -g "$ARCHIVE" \
-+	| awk 'NF==3 {print $3}' | sort -u \
++	| awk 'NF==3 {print $3}' | sort -u > "$DEFINED_SYMS"
++
++if test "$SLIM_MODE" = elf; then
++	$READELF --section-groups "$ARCHIVE" \
++		| sed -nE "s/.*\.group' \[([^]]+)\].*/\1/p" \
++		| sort -u >> "$DEFINED_SYMS"
++fi
++
++sort -u "$DEFINED_SYMS" \
 +	| grep -F -v -x -f "$API_SYMS" \
 +	| awk '{print $1, "__fbclient_" $1}' \
 +	> "$REDEFINE"
@@ -571,7 +612,7 @@ index 0000000000..7960599ecf
 +	$OBJCOPY_BIN --redefine-syms="$REDEFINE" "$ARCHIVE"
 +fi
 +
-+rm -f "$REDEFINE" "$API_SYMS"
++rm -f "$REDEFINE" "$API_SYMS" "$DEFINED_SYMS"
 diff --git a/builds/win32/compile_static.bat b/builds/win32/compile_static.bat
 new file mode 100644
 index 0000000000..4bfd6a9376
@@ -918,6 +959,22 @@ index ebeb3910dd..6792a42aa8 100644
  @if "%FB_CLIENT_ONLY%"=="" (
  	copy %FB_ROOT_PATH%\temp\%FB_OBJ_DIR%\firebird\intl\* %FB_OUTPUT_DIR%\intl >nul
  	copy %FB_ROOT_PATH%\temp\%FB_OBJ_DIR%\firebird\plugins\udr\*.dll %FB_OUTPUT_DIR%\plugins\udr >nul
+diff --git a/builds/win32/make_boot.bat b/builds/win32/make_boot.bat
+index 3cbe542a25..bc4e2f10e1 100644
+--- a/builds/win32/make_boot.bat
++++ b/builds/win32/make_boot.bat
+@@ -145,9 +145,11 @@ goto :EOF
+ @echo Building LibTomMath (%FB_OBJ_DIR%)...
+ @call compile.bat extern\libtommath\libtommath_MSVC%MSVC_VERSION% libtommath_%FB_CONFIG%_%FB_TARGET_PLATFORM%.log libtommath
+ if errorlevel 1 call :boot2 libtommath_%FB_OBJ_DIR%
++@if defined FBBUILD_WITHOUT_TOMCRYPT goto :LibTomDone
+ @echo Building LibTomCrypt (%FB_OBJ_DIR%)...
+ @call compile.bat extern\libtomcrypt\libtomcrypt_MSVC%MSVC_VERSION% libtomcrypt_%FB_CONFIG%_%FB_TARGET_PLATFORM%.log libtomcrypt
+ if errorlevel 1 call :boot2 libtomcrypt_%FB_OBJ_DIR%
++:LibTomDone
+ goto :EOF
+ 
+ ::===================
 diff --git a/builds/win32/msvc15/Firebird.sln b/builds/win32/msvc15/Firebird.sln
 index 4293fbe7bd..8c7ae357e9 100644
 --- a/builds/win32/msvc15/Firebird.sln
@@ -1401,17 +1458,20 @@ index 4293fbe7bd..8c7ae357e9 100644
  		HideSolutionNode = FALSE
 diff --git a/builds/win32/msvc15/FirebirdDebugStatic.props b/builds/win32/msvc15/FirebirdDebugStatic.props
 new file mode 100644
-index 0000000000..02ac17ce31
+index 0000000000..d1ad61f4d0
 --- /dev/null
 +++ b/builds/win32/msvc15/FirebirdDebugStatic.props
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,18 @@
 +﻿<?xml version="1.0" encoding="utf-8"?>
 +<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 +  <PropertyGroup>
 +    <_ProjectFileVersion>10.0.30319.1</_ProjectFileVersion>
++    <FB_STATIC_PREPROCESSOR_DEFINITIONS>STATIC_CLIENT</FB_STATIC_PREPROCESSOR_DEFINITIONS>
++    <FB_STATIC_PREPROCESSOR_DEFINITIONS Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">STATIC_CLIENT;WITHOUT_TOMCRYPT</FB_STATIC_PREPROCESSOR_DEFINITIONS>
 +  </PropertyGroup>
 +  <ItemDefinitionGroup>
 +    <ClCompile>
++      <PreprocessorDefinitions>$(FB_STATIC_PREPROCESSOR_DEFINITIONS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
 +      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
 +      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
 +    </ClCompile>
@@ -1422,17 +1482,20 @@ index 0000000000..02ac17ce31
 +</Project>
 diff --git a/builds/win32/msvc15/FirebirdReleaseStatic.props b/builds/win32/msvc15/FirebirdReleaseStatic.props
 new file mode 100644
-index 0000000000..ebd0992ba8
+index 0000000000..3d29f075dd
 --- /dev/null
 +++ b/builds/win32/msvc15/FirebirdReleaseStatic.props
-@@ -0,0 +1,18 @@
+@@ -0,0 +1,21 @@
 +﻿<?xml version="1.0" encoding="utf-8"?>
 +<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 +  <PropertyGroup>
 +    <_ProjectFileVersion>10.0.30319.1</_ProjectFileVersion>
++    <FB_STATIC_PREPROCESSOR_DEFINITIONS>STATIC_CLIENT</FB_STATIC_PREPROCESSOR_DEFINITIONS>
++    <FB_STATIC_PREPROCESSOR_DEFINITIONS Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">STATIC_CLIENT;WITHOUT_TOMCRYPT</FB_STATIC_PREPROCESSOR_DEFINITIONS>
 +  </PropertyGroup>
 +  <ItemDefinitionGroup>
 +    <ClCompile>
++      <PreprocessorDefinitions>$(FB_STATIC_PREPROCESSOR_DEFINITIONS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
 +      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
 +      <AdditionalOptions>/Zo %(AdditionalOptions)</AdditionalOptions>
 +      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
@@ -1445,7 +1508,7 @@ index 0000000000..ebd0992ba8
 +  </ItemDefinitionGroup>
 +</Project>
 diff --git a/builds/win32/msvc15/common.vcxproj b/builds/win32/msvc15/common.vcxproj
-index a9fc6ff024..86d3824b89 100644
+index a9fc6ff024..b9ce437f1c 100644
 --- a/builds/win32/msvc15/common.vcxproj
 +++ b/builds/win32/msvc15/common.vcxproj
 @@ -9,6 +9,14 @@
@@ -1634,7 +1697,7 @@ index a9fc6ff024..86d3824b89 100644
    </PropertyGroup>
    <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
      <ClCompile>
-@@ -359,6 +449,51 @@
+@@ -359,6 +449,53 @@
        <AdditionalDependencies>ws2_32.lib;../../../extern/libtommath/lib/$(PlatformName)\$(Configuration)\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\$(Configuration)\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\$(Configuration)\decnumber.lib;../../../extern/ttmath\$(Configuration)\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
      </Lib>
    </ItemDefinitionGroup>
@@ -1643,7 +1706,8 @@ index a9fc6ff024..86d3824b89 100644
 +      <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;SUPERSERVER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
 +    </ClCompile>
 +    <Lib>
-+      <AdditionalDependencies>../../../extern/libtommath/lib/$(PlatformName)\Release\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\Release\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'!='1'">../../../extern/libtommath/lib/$(PlatformName)\Release\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\Release\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">../../../extern/libtommath/lib/$(PlatformName)\Release\tommath.lib;../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
 +    </Lib>
 +  </ItemDefinitionGroup>
 +  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='DebugStatic|Win32'">
@@ -1655,7 +1719,8 @@ index a9fc6ff024..86d3824b89 100644
 +      <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
 +    </ClCompile>
 +    <Lib>
-+      <AdditionalDependencies>../../../extern/libtommath/lib/$(PlatformName)\Debug\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\Debug\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'!='1'">../../../extern/libtommath/lib/$(PlatformName)\Debug\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\Debug\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">../../../extern/libtommath/lib/$(PlatformName)\Debug\tommath.lib;../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
 +    </Lib>
 +  </ItemDefinitionGroup>
 +  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'">
@@ -1711,7 +1776,7 @@ index eb80abdaeb..904a547c20 100644
        <Filter>headers</Filter>
      </ClInclude>
 diff --git a/builds/win32/msvc15/yvalve.vcxproj b/builds/win32/msvc15/yvalve.vcxproj
-index a9103faa25..86b17da328 100644
+index a9103faa25..4aab9172b9 100644
 --- a/builds/win32/msvc15/yvalve.vcxproj
 +++ b/builds/win32/msvc15/yvalve.vcxproj
 @@ -9,6 +9,14 @@
@@ -1749,7 +1814,7 @@ index a9103faa25..86b17da328 100644
      <ClCompile Include="..\..\..\src\plugins\crypt\arc4\Arc4.cpp" />
      <ClCompile Include="..\..\..\src\remote\client\BlrFromMessage.cpp" />
      <ClCompile Include="..\..\..\src\remote\client\interface.cpp" />
-@@ -39,6 +54,10 @@
+@@ -39,12 +54,17 @@
      <ClCompile Include="..\..\..\src\yvalve\user_dsql.cpp" />
      <ClCompile Include="..\..\..\src\yvalve\utl.cpp" />
      <ClCompile Include="..\..\..\src\yvalve\why.cpp" />
@@ -1760,7 +1825,26 @@ index a9103faa25..86b17da328 100644
    </ItemGroup>
    <ItemGroup>
      <ClInclude Include="..\..\..\src\auth\SecureRemotePassword\client\SrpClient.h" />
-@@ -78,7 +97,10 @@
+     <ClInclude Include="..\..\..\src\auth\SecurityDatabase\LegacyClient.h" />
+     <ClInclude Include="..\..\..\src\auth\trusted\AuthSspi.h" />
+     <ClInclude Include="..\..\..\src\plugins\crypt\arc4\Arc4.h" />
++    <ClInclude Include="..\..\..\src\plugins\crypt\chacha\ChaCha.h" />
+     <ClInclude Include="..\..\..\src\remote\client\BlrFromMessage.h" />
+     <ClInclude Include="..\..\..\src\yvalve\alt_proto.h" />
+     <ClInclude Include="..\..\..\src\yvalve\array_proto.h" />
+@@ -59,6 +79,11 @@
+     <ClInclude Include="..\..\..\src\yvalve\utl_proto.h" />
+     <ClInclude Include="..\..\..\src\yvalve\why_proto.h" />
+   </ItemGroup>
++  <ItemGroup Condition="'$(Configuration)'=='DebugStatic' Or '$(Configuration)'=='ReleaseStatic'">
++    <ClCompile Include="..\..\..\src\plugins\crypt\chacha\ChaCha.cpp">
++      <ExcludedFromBuild Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">true</ExcludedFromBuild>
++    </ClCompile>
++  </ItemGroup>
+   <ItemGroup>
+     <ProjectReference Include="common.vcxproj">
+       <Project>{15605f44-bffd-444f-ad4c-55dc9d704465}</Project>
+@@ -78,7 +103,10 @@
      </ProjectReference>
    </ItemGroup>
    <ItemGroup>
@@ -1772,7 +1856,7 @@ index a9103faa25..86b17da328 100644
    </ItemGroup>
    <ItemGroup>
      <None Include="..\defs\firebird.def" />
-@@ -101,6 +123,15 @@
+@@ -101,6 +129,15 @@
      <PlatformToolset Condition="'$(VisualStudioVersion)'=='17.0'">v143</PlatformToolset>
      <PlatformToolset Condition="'$(VisualStudioVersion)'=='18.0'">v145</PlatformToolset>
    </PropertyGroup>
@@ -1788,7 +1872,7 @@ index a9103faa25..86b17da328 100644
    <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
      <ConfigurationType>DynamicLibrary</ConfigurationType>
      <UseOfMfc>false</UseOfMfc>
-@@ -110,6 +141,15 @@
+@@ -110,6 +147,15 @@
      <PlatformToolset Condition="'$(VisualStudioVersion)'=='17.0'">v143</PlatformToolset>
      <PlatformToolset Condition="'$(VisualStudioVersion)'=='18.0'">v145</PlatformToolset>
    </PropertyGroup>
@@ -1804,7 +1888,7 @@ index a9103faa25..86b17da328 100644
    <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
      <ConfigurationType>DynamicLibrary</ConfigurationType>
      <UseOfMfc>false</UseOfMfc>
-@@ -119,6 +159,15 @@
+@@ -119,6 +165,15 @@
      <PlatformToolset Condition="'$(VisualStudioVersion)'=='17.0'">v143</PlatformToolset>
      <PlatformToolset Condition="'$(VisualStudioVersion)'=='18.0'">v145</PlatformToolset>
    </PropertyGroup>
@@ -1820,7 +1904,7 @@ index a9103faa25..86b17da328 100644
    <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
      <ConfigurationType>DynamicLibrary</ConfigurationType>
      <UseOfMfc>false</UseOfMfc>
-@@ -128,6 +177,15 @@
+@@ -128,6 +183,15 @@
      <PlatformToolset Condition="'$(VisualStudioVersion)'=='17.0'">v143</PlatformToolset>
      <PlatformToolset Condition="'$(VisualStudioVersion)'=='18.0'">v145</PlatformToolset>
    </PropertyGroup>
@@ -1836,7 +1920,7 @@ index a9103faa25..86b17da328 100644
    <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
    <ImportGroup Label="ExtensionSettings">
    </ImportGroup>
-@@ -137,43 +195,83 @@
+@@ -137,43 +201,83 @@
      <Import Project="FirebirdCommon.props" />
      <Import Project="FirebirdDebug.props" />
    </ImportGroup>
@@ -1920,7 +2004,7 @@ index a9103faa25..86b17da328 100644
      <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\..\temp\$(PlatformName)\$(Configuration)\firebird\</OutDir>
      <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\..\temp\$(PlatformName)\$(Configuration)\firebird\</OutDir>
      <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\..\temp\$(PlatformName)\$(Configuration)\firebird\</OutDir>
-@@ -233,7 +331,40 @@
+@@ -233,7 +337,40 @@
        <SubSystem>Windows</SubSystem>
      </Link>
    </ItemDefinitionGroup>
@@ -1963,11 +2047,56 @@ index a9103faa25..86b17da328 100644
 -</Project>
 \ No newline at end of file
 +</Project>
+diff --git a/builds/win32/msvc15/yvalve.vcxproj.filters b/builds/win32/msvc15/yvalve.vcxproj.filters
+index 09ca441a43..77c729c067 100644
+--- a/builds/win32/msvc15/yvalve.vcxproj.filters
++++ b/builds/win32/msvc15/yvalve.vcxproj.filters
+@@ -78,6 +78,9 @@
+     <ClCompile Include="..\..\..\src\plugins\crypt\arc4\Arc4.cpp">
+       <Filter>source</Filter>
+     </ClCompile>
++    <ClCompile Include="..\..\..\src\plugins\crypt\chacha\ChaCha.cpp">
++      <Filter>source</Filter>
++    </ClCompile>
+     <ClCompile Include="..\..\..\src\remote\client\BlrFromMessage.cpp">
+       <Filter>Remote client</Filter>
+     </ClCompile>
+@@ -134,6 +137,9 @@
+     <ClInclude Include="..\..\..\src\plugins\crypt\arc4\Arc4.h">
+       <Filter>headers</Filter>
+     </ClInclude>
++    <ClInclude Include="..\..\..\src\plugins\crypt\chacha\ChaCha.h">
++      <Filter>headers</Filter>
++    </ClInclude>
+     <ClInclude Include="..\..\..\src\remote\client\BlrFromMessage.h">
+       <Filter>headers</Filter>
+     </ClInclude>
+diff --git a/builds/win32/run_all.bat b/builds/win32/run_all.bat
+index d59910aef9..c70228365b 100644
+--- a/builds/win32/run_all.bat
++++ b/builds/win32/run_all.bat
+@@ -11,6 +11,7 @@ set FBBUILD_MAKE_KITS_ONLY=
+ set FBBUILD_BUILD_ONLY=0
+ set FBBUILD_KITS=ISX ZIP
+ set FBBUILD_TEST_ONLY=
++set FBBUILD_WITHOUT_TOMCRYPT=
+ set FB2_SNAPSHOT=
+ 
+ ::Check if on-line help is required
+@@ -81,6 +82,8 @@ goto :END
+ @echo.
+ @echo    NOCLEAN   - don't run CLEAN_ALL.BAT
+ @echo.
++@echo    WITHOUT_TOMCRYPT - omit TomCrypt and ChaCha from CLIENT_ONLY=STATIC builds
++@echo.
+ @echo    REALCLEAN - Run CLEAN_ALL.BAT REALCLEAN
+ @echo                This will do a deeper clean.
+ @echo                Recommended for multi-platform builds
 diff --git a/builds/win32/setenvvar.bat b/builds/win32/setenvvar.bat
-index 6e78fd0c17..3d62e40736 100644
+index 6e78fd0c17..b9e0751b82 100644
 --- a/builds/win32/setenvvar.bat
 +++ b/builds/win32/setenvvar.bat
-@@ -11,13 +11,80 @@
+@@ -11,13 +11,87 @@
  
  set FB_CLEAN=
  
@@ -1992,6 +2121,11 @@ index 6e78fd0c17..3d62e40736 100644
 +  shift /1
 +  goto :parse_args
  )
++if /I "%~1"=="WITHOUT_TOMCRYPT" (
++  set FBBUILD_WITHOUT_TOMCRYPT=1
++  shift /1
++  goto :parse_args
++)
 +if /I "%~1"=="CLEAN" (
 +  set FB_CLEAN=:rebuild
 +  shift /1
@@ -2051,10 +2185,25 @@ index 6e78fd0c17..3d62e40736 100644
 +goto :parse_args
 +
 +:parse_args_done
++
++@if /I not "%FB_CLIENT_ONLY%"=="STATIC" set FBBUILD_WITHOUT_TOMCRYPT=
  
  @if not defined FB_CONFIG (
    set FB_DBG=
-@@ -168,6 +235,17 @@ rem NOTE 2 This code is likely to break again in the future !!!!
+@@ -131,10 +205,10 @@ rem NOTE 2 This code is likely to break again in the future !!!!
+   @setlocal EnableDelayedExpansion
+ 
+   if not exist "!VCToolsRedistDir!!VSCMD_ARG_TGT_ARCH!\Microsoft.VC!MSVC_RUNTIME_MAJOR_VERSION!!MSVC_RUNTIME_MINOR_VERSION!.CRT" (
+-    @endlocal  
++    @endlocal
+     set MSVC_RUNTIME_MINOR_VERSION=3
+   ) else (
+-    @endlocal  
++    @endlocal
+   )
+   set MSVC_RUNTIME_LIBRARY_VERSION=%MSVC_RUNTIME_MAJOR_VERSION%%MSVC_RUNTIME_MINOR_VERSION%
+ 
+@@ -168,6 +242,17 @@ rem NOTE 2 This code is likely to break again in the future !!!!
  @set FIREBIRD_BOOT_BUILD=1
  
  @set FB_OBJ_DIR=%FB_TARGET_PLATFORM%\%FB_CONFIG%
@@ -2072,12 +2221,13 @@ index 6e78fd0c17..3d62e40736 100644
  @set FB_BIN_DIR=%FB_ROOT_PATH%\temp\%FB_OBJ_DIR%\firebird
  
  
-@@ -203,6 +281,9 @@ goto :END
+@@ -203,6 +288,10 @@ goto :END
  @echo    vs_ver=%VS_VER%
  @echo    FB_VSCOMNTOOLS=%FB_VSCOMNTOOLS%
  @echo    platform=%FB_TARGET_PLATFORM%
 +@if /I "%FB_CLIENT_ONLY%"=="STATIC" (
 +  @echo    fbclient_static_config=%FB_STATIC_CONFIG%
++  @if defined FBBUILD_WITHOUT_TOMCRYPT echo    without_tomcrypt=yes
 +)
  @echo    msvc_version=%MSVC_VERSION%
  @echo    db_path=%FB_DB_PATH%
@@ -2114,10 +2264,10 @@ index 32adf0ac86..6581616bac 100644
  dnl: Platform Specific Files
 diff --git a/doc/README.StaticClient.md b/doc/README.StaticClient.md
 new file mode 100644
-index 0000000000..f8af6ba50a
+index 0000000000..3673ea2ee4
 --- /dev/null
 +++ b/doc/README.StaticClient.md
-@@ -0,0 +1,153 @@
+@@ -0,0 +1,169 @@
 +# Building and using a static `fbclient`
 +
 +Firebird's client library, `libfbclient`/`fbclient.dll`, is normally built and distributed only as a **shared** library.
@@ -2154,12 +2304,16 @@ index 0000000000..f8af6ba50a
 +explicitly - an empty/undefined `TARGET` elsewhere in a partial build (e.g. after only some sub-targets ran) can lead to
 +mismatched paths.
 +
-+This produces `<firebird>/lib/libfbclient.a`, built from the same object set as the shared `libfbclient` (yValve +
-+remote client + common).
++This produces `<firebird>/lib/libfbclient.a`, built from the shared client object set (yValve + remote client + common)
++with the static client's built-in plugin registrations.
++
++When TomCrypt support is enabled, ChaCha and ChaCha64 are included and registered as built-in wire crypt plugins in
++`libfbclient.a`. The standalone `libChaCha.so` plugin is not needed by applications using the static client.
 +
 +Link your application against it, along with the same system libraries the shared library depends on transitively
 +(pthread, dl, crypt, rt, etc. as applicable to your platform). Most third-party dependencies (tommath, tomcrypt) are
-+**not** bundled - link those directly if your final binary needs symbols from them.
++**not** bundled - link those directly. In particular, applications using the static client must link `-ltomcrypt`
++when TomCrypt support is enabled.
 +
 +**`decNumber`/`libdecFloat` is the one exception**: it is small, vendored in-tree, and has no external system-library
 +equivalent to conflict with, so its objects are merged directly into `libfbclient.a`/`fbclient_static.lib` - you do not
@@ -2179,16 +2333,18 @@ index 0000000000..f8af6ba50a
 +   output (GNU `--cref` on ELF, Apple `-map` on Darwin) identifies which members were pulled in, and only those
 +   members are repacked into the archive.
 +2. **Dynamic symbol renaming**: every defined global symbol NOT in the exported API list is renamed with a `__fbclient_`
-+   prefix using `objcopy --redefine-syms` (GNU `objcopy` on ELF, `llvm-objcopy` on Darwin). The rename map is generated
-+   automatically at build time:
++   prefix using `objcopy --redefine-syms` (GNU `objcopy` on ELF, `llvm-objcopy` on Darwin). ELF COMDAT group signatures
++   are included as well; they are local symbols and are not reported by `nm -g`, but must be renamed with their sections.
++   The rename map is generated automatically at build time:
 +
 +   ```
 +   nm --defined-only -g libfbclient.a  |  extract symbol names  |  filter out API list  |  awk '{print $1, "__fbclient_" $1}'
++   readelf --section-groups libfbclient.a  |  extract COMDAT group signatures  |  add to symbol list (ELF)
 +   ```
 +
 +   This covers every internal symbol automatically (decNumber, global operators, C++ vtables, typeinfo, guard
-+   variables, etc.) without any hand-maintained lists. The multi-member archive structure is preserved, so COMDAT
-+   groups and cross-member references work correctly at final link time.
++   variables, COMDAT group signatures, etc.) without any hand-maintained lists. The multi-member archive structure is
++   preserved, so COMDAT groups and cross-member references work correctly at final link time with both GCC and Clang.
 +
 +### Post-archive processing
 +
@@ -2204,6 +2360,16 @@ index 0000000000..f8af6ba50a
 +```sh
 +builds\win32\make_all.bat CLIENT_ONLY=STATIC
 +```
++
++TomCrypt support is enabled by default. ChaCha and ChaCha64 are then included and registered as built-in wire crypt
++plugins in `fbclient_static.lib`; applications must link `tomcrypt.lib` in addition to the existing static-client
++dependencies. To omit TomCrypt and ChaCha from a static client build, use:
++
++```bat
++builds\win32\run_all.bat CLIENT_ONLY=STATIC WITHOUT_TOMCRYPT
++```
++
++`WITHOUT_TOMCRYPT` is valid only with `CLIENT_ONLY=STATIC`.
 +
 +That builds `yvalve` as a static library (`fbclient_static.lib`) under `temp\<platform>\ReleaseStatic` (or
 +`DebugStatic`), then runs `builds/win32/fix_fbclient_static.bat` to rename symbols with
@@ -2272,14 +2438,14 @@ index 0000000000..f8af6ba50a
 +fires on thread exit for any thread that touched the slot, regardless of whether the code is in a DLL or linked directly
 +into the host application, mirroring what `pthread_key_create`'s destructor already gives the POSIX build for free.
 diff --git a/src/common/classes/Hash.h b/src/common/classes/Hash.h
-index fe7b3cc9d3..34f5a50271 100644
+index fe7b3cc9d3..293abc7595 100644
 --- a/src/common/classes/Hash.h
 +++ b/src/common/classes/Hash.h
 @@ -365,6 +365,7 @@ namespace Firebird
  		SINT64 hashNumber = 0;
  	};
  
-+#if defined(HAVE_TOMCRYPT)
++#if defined(HAVE_TOMCRYPT) && !defined(WITHOUT_TOMCRYPT)
  	class LibTomCryptHashContext : public HashContext
  	{
  	public:
@@ -2287,7 +2453,7 @@ index fe7b3cc9d3..34f5a50271 100644
  		State* statePtr;
  		SLONG hash;
  	};
-+#endif // HAVE_TOMCRYPT
++#endif // HAVE_TOMCRYPT && !WITHOUT_TOMCRYPT
  
  } // namespace Firebird
  
@@ -2498,7 +2664,7 @@ index 0000000000..70524db8d5
 +
 +#endif // CLASSES_THREAD_CLEANUP_H
 diff --git a/src/common/classes/TomCryptHash.cpp b/src/common/classes/TomCryptHash.cpp
-index 1816cc0d52..6baecbcbd0 100644
+index 1816cc0d52..a4ef0d374f 100644
 --- a/src/common/classes/TomCryptHash.cpp
 +++ b/src/common/classes/TomCryptHash.cpp
 @@ -23,6 +23,9 @@
@@ -2506,7 +2672,7 @@ index 1816cc0d52..6baecbcbd0 100644
  
  #include "firebird.h"
 +
-+#if defined(HAVE_TOMCRYPT)
++#if defined(HAVE_TOMCRYPT) && !defined(WITHOUT_TOMCRYPT)
 +
  #include "../common/classes/Hash.h"
  #include "../common/dsc.h"
@@ -2515,7 +2681,7 @@ index 1816cc0d52..6baecbcbd0 100644
  	result.makeLong(0, &hash);
  }
  
-+#endif // HAVE_TOMCRYPT
++#endif // HAVE_TOMCRYPT && !WITHOUT_TOMCRYPT
 diff --git a/src/common/classes/alloc.cpp b/src/common/classes/alloc.cpp
 index 5c897f9fbd..2136b8f20f 100644
 --- a/src/common/classes/alloc.cpp
@@ -2730,6 +2896,106 @@ index 7ea8106e93..b048a512bb 100644
  		case DLL_PROCESS_DETACH:
  			bDllProcessExiting = (reserved != NULL);
  			dDllUnloadTID = GetCurrentThreadId();
+diff --git a/src/plugins/crypt/chacha/ChaCha.cpp b/src/plugins/crypt/chacha/ChaCha.cpp
+index 02cb9c76f7..b8dd4d134f 100644
+--- a/src/plugins/crypt/chacha/ChaCha.cpp
++++ b/src/plugins/crypt/chacha/ChaCha.cpp
+@@ -28,6 +28,7 @@
+ 
+ #include "../common/classes/ImplementHelper.h"
+ #include "../common/classes/auto.h"
++#include "ChaCha.h"
+ #include <tomcrypt.h>
+ #include <../common/os/guid.h>
+ 
+@@ -189,10 +190,18 @@ SimpleFactory<ChaCha<8> > factory64;
+ 
+ } // anonymous namespace
+ 
++namespace Crypt
++{
++	void registerChaCha(IPluginManager* iPlugin)
++	{
++		iPlugin->registerPluginFactory(IPluginManager::TYPE_WIRE_CRYPT, "ChaCha", &factory);
++		iPlugin->registerPluginFactory(IPluginManager::TYPE_WIRE_CRYPT, "ChaCha64", &factory64);
++	}
++} // namespace Crypt
++
+ extern "C" FB_DLL_EXPORT void FB_PLUGIN_ENTRY_POINT(Firebird::IMaster* master)
+ {
+ 	CachedMasterInterface::set(master);
+-	PluginManagerInterfacePtr()->registerPluginFactory(IPluginManager::TYPE_WIRE_CRYPT, "ChaCha", &factory);
+-	PluginManagerInterfacePtr()->registerPluginFactory(IPluginManager::TYPE_WIRE_CRYPT, "ChaCha64", &factory64);
++	Crypt::registerChaCha(PluginManagerInterfacePtr());
+ 	getUnloadDetector()->registerMe();
+ }
+diff --git a/src/plugins/crypt/chacha/ChaCha.h b/src/plugins/crypt/chacha/ChaCha.h
+new file mode 100644
+index 0000000000..367160ac19
+--- /dev/null
++++ b/src/plugins/crypt/chacha/ChaCha.h
+@@ -0,0 +1,37 @@
++/*
++ *  PROGRAM:        Firebird authentication.
++ *  MODULE:         ChaCha.h
++ *  DESCRIPTION:    ChaCha wire crypt plugin.
++ *
++ *  The contents of this file are subject to the Initial
++ *  Developer's Public License Version 1.0 (the "License");
++ *  you may not use this file except in compliance with the
++ *  License. You may obtain a copy of the License at
++ *  http://www.ibphoenix.com/main.nfs?a=ibphoenix&page=ibp_idpl.
++ *
++ *  Software distributed under the License is distributed AS IS,
++ *  WITHOUT WARRANTY OF ANY KIND, either express or implied.
++ *  See the License for the specific language governing rights
++ *  and limitations under the License.
++ *
++ *  The Original Code was created by Alex Peshkov
++ *  for the Firebird Open Source RDBMS project.
++ *
++ *  Copyright (c) 2026 Adriano dos Santos Fernandes <adrianosf@gmail.com>
++ *  and all contributors signed below.
++ *
++ *  All Rights Reserved.
++ *  Contributor(s): ______________________________________.
++ */
++
++#ifndef CRYPT_CHACHA_H
++#define CRYPT_CHACHA_H
++
++#include "firebird/Interface.h"
++
++namespace Crypt
++{
++	void registerChaCha(Firebird::IPluginManager* iPlugin);
++} // namespace Crypt
++
++#endif // CRYPT_CHACHA_H
+diff --git a/src/remote/client/interface.cpp b/src/remote/client/interface.cpp
+index e9bdd12d60..99952f248b 100644
+--- a/src/remote/client/interface.cpp
++++ b/src/remote/client/interface.cpp
+@@ -72,6 +72,9 @@
+ #include "../auth/SecureRemotePassword/client/SrpClient.h"
+ #include "../auth/trusted/AuthSspi.h"
+ #include "../plugins/crypt/arc4/Arc4.h"
++#if defined(STATIC_CLIENT) && defined(HAVE_TOMCRYPT) && !defined(WITHOUT_TOMCRYPT)
++#include "../plugins/crypt/chacha/ChaCha.h"
++#endif
+ #include "BlrFromMessage.h"
+ #include "../dsql/DsqlBatch.h"
+ 
+@@ -1100,6 +1103,9 @@ void registerRedirector(IPluginManager* iPlugin)
+ #endif
+ 
+ 	Crypt::registerArc4(iPlugin);
++#if defined(STATIC_CLIENT) && defined(HAVE_TOMCRYPT) && !defined(WITHOUT_TOMCRYPT)
++	Crypt::registerChaCha(iPlugin);
++#endif
+ }
+ 
+ } // namespace Remote
 diff --git a/src/yvalve/MasterImplementation.cpp b/src/yvalve/MasterImplementation.cpp
 index d8ec299dbc..f23066bdc8 100644
 --- a/src/yvalve/MasterImplementation.cpp
