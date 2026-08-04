@@ -2683,16 +2683,15 @@ index 1816cc0d52..a4ef0d374f 100644
  
 +#endif // HAVE_TOMCRYPT && !WITHOUT_TOMCRYPT
 diff --git a/src/common/classes/alloc.cpp b/src/common/classes/alloc.cpp
-index 5c897f9fbd..2136b8f20f 100644
+index 5c897f9fbd..102d211dc7 100644
 --- a/src/common/classes/alloc.cpp
 +++ b/src/common/classes/alloc.cpp
-@@ -3126,3 +3126,17 @@ void operator delete[](void* mem) noexcept
+@@ -3126,3 +3126,15 @@ void operator delete[](void* mem) noexcept
  {
  	MemoryPool::globalFree(mem);
  }
 +
 +#ifdef DEBUG_GDS_ALLOC
-+#if __cplusplus >= 201402L
 +void operator delete(void* mem, std::size_t s) noexcept
 +{
 +	MemoryPool::globalFree(mem);
@@ -2703,19 +2702,31 @@ index 5c897f9fbd..2136b8f20f 100644
 +	MemoryPool::globalFree(mem);
 +}
 +#endif
-+#endif
 diff --git a/src/common/classes/alloc.h b/src/common/classes/alloc.h
-index 40de23c4da..37011f6854 100644
+index 40de23c4da..46521b11e2 100644
 --- a/src/common/classes/alloc.h
 +++ b/src/common/classes/alloc.h
-@@ -395,6 +395,11 @@ inline void operator delete[](void* mem, std::size_t s ALLOC_PARAMS) noexcept
+@@ -378,7 +378,6 @@ inline void operator delete[](void* mem, Firebird::MemoryPool& pool ALLOC_PARAMS
+ 	MemoryPool::globalFree(mem);
+ }
+ 
+-#if __cplusplus >= 201402L
+ inline void operator delete(void* mem, std::size_t s ALLOC_PARAMS) noexcept
+ {
+ 	MemoryPool::globalFree(mem);
+@@ -388,13 +387,15 @@ inline void operator delete[](void* mem, std::size_t s ALLOC_PARAMS) noexcept
+ {
+ 	MemoryPool::globalFree(mem);
+ }
+-#endif
+ 
+ #ifdef DEBUG_GDS_ALLOC
+ 
  extern void operator delete(void* mem) noexcept;
  extern void operator delete[](void* mem) noexcept;
  
-+#if __cplusplus >= 201402L
 +extern void operator delete(void* mem, std::size_t s) noexcept;
 +extern void operator delete[](void* mem, std::size_t s) noexcept;
-+#endif
 +
  #endif // DEBUG_GDS_ALLOC
  
