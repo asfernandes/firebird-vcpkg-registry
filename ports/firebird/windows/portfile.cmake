@@ -18,6 +18,10 @@ else()
     set(FB_BUILD_ARGS CLIENT_ONLY)
 endif()
 
+if(NOT "chacha" IN_LIST FEATURES)
+    list(APPEND FB_BUILD_ARGS WITHOUT_TOMCRYPT)
+endif()
+
 
 # Release build
 

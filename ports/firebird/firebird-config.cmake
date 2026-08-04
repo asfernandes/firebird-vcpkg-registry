@@ -110,6 +110,12 @@ else()
     )
 endif()
 
+if(APPLE AND _FIREBIRD_SHARED_FILENAME STREQUAL "libfbclient.a")
+    set_property(TARGET firebird APPEND PROPERTY
+        INTERFACE_LINK_OPTIONS "-Wl,-rpath,$<TARGET_FILE_DIR:firebird>"
+    )
+endif()
+
 if(_FIREBIRD_TOMMATH_RELEASE)
     set_property(TARGET firebird APPEND PROPERTY
         INTERFACE_LINK_LIBRARIES
