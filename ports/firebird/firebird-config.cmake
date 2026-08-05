@@ -48,6 +48,22 @@ if((NOT WIN32 AND EXISTS "${_FIREBIRD_LIB_DIR}/libfbclient.a") OR
         set(_FIREBIRD_TOMMATH_DEBUG "${_FIREBIRD_TOMMATH_RELEASE}")
     endif()
 
+    find_library(_FIREBIRD_TOMCRYPT_RELEASE
+        NAMES tomcrypt tomcryptd
+        PATHS "${_FIREBIRD_LIB_DIR}"
+        NO_DEFAULT_PATH
+    )
+
+    find_library(_FIREBIRD_TOMCRYPT_DEBUG
+        NAMES tomcryptd tomcrypt
+        PATHS "${_FIREBIRD_LIB_DIR_DEBUG}"
+        NO_DEFAULT_PATH
+    )
+
+    if(_FIREBIRD_TOMCRYPT_RELEASE AND NOT _FIREBIRD_TOMCRYPT_DEBUG)
+        set(_FIREBIRD_TOMCRYPT_DEBUG "${_FIREBIRD_TOMCRYPT_RELEASE}")
+    endif()
+
     if(NOT WIN32)
         find_dependency(Threads)
 
@@ -117,6 +133,14 @@ if(APPLE AND _FIREBIRD_SHARED_FILENAME STREQUAL "libfbclient.a")
 endif()
 
 if(_FIREBIRD_TOMMATH_RELEASE)
+    if(_FIREBIRD_TOMCRYPT_RELEASE)
+        set_property(TARGET firebird APPEND PROPERTY
+            INTERFACE_LINK_LIBRARIES
+                "$<$<CONFIG:Debug>:${_FIREBIRD_TOMCRYPT_DEBUG}>"
+                "$<$<NOT:$<CONFIG:Debug>>:${_FIREBIRD_TOMCRYPT_RELEASE}>"
+        )
+    endif()
+
     set_property(TARGET firebird APPEND PROPERTY
         INTERFACE_LINK_LIBRARIES
             "$<$<CONFIG:Debug>:${_FIREBIRD_TOMMATH_DEBUG}>"
