@@ -14,6 +14,10 @@ on:
         description: Optional version of the selected port, for example 5.0.4 or 5.0.4#3. Empty uses the selected branch.
         required: false
         type: string
+      features:
+        description: Optional comma-separated features of the selected port, for example chacha.
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -47,6 +51,7 @@ jobs:
     env:
       PORT: ${{ inputs.port }}
       VERSION: ${{ inputs.version }}
+      FEATURES: ${{ inputs.features }}
       VCPKG_TRIPLET: ${{ matrix.triplet }}
 
     steps:
@@ -127,6 +132,38 @@ jobs:
             tar -xf "$archive" -C "$overlay/ports/$PORT"
           fi
 
+          if [[ -n "$FEATURES" ]]; then
+            manifest="$manifest_root/vcpkg.json"
+            manifest_tmp="$manifest.tmp"
+            jq --arg port "$PORT" --arg features "$FEATURES" '
+              ($features | split(",") | map(gsub("^[[:space:]]+|[[:space:]]+$"; ""))) as $selected
+              | if any($selected[]; . == "") then
+                  error("Features must be comma-separated non-empty names")
+                else
+                  .
+                end
+              | if ([.dependencies[] | select(
+                    (type == "string" and . == $port) or
+                    (type == "object" and .name == $port)
+                  )] | length) != 1 then
+                  error("Port dependency was not found exactly once in the example manifest")
+                else
+                  .
+                end
+              | .dependencies = [
+                  .dependencies[] |
+                  if type == "string" and . == $port then
+                    {name: ., features: $selected}
+                  elif type == "object" and .name == $port then
+                    .features = $selected
+                  else
+                    .
+                  end
+                ]
+            ' "$manifest" > "$manifest_tmp"
+            mv "$manifest_tmp" "$manifest"
+          fi
+
           baseline="$(git -C "$VCPKG_ROOT" rev-parse HEAD)"
           jq -n --arg baseline "$baseline" --arg overlay "$overlay/ports" \
             '{"default-registry": {kind: "builtin", baseline: $baseline}, "overlay-ports": [$overlay]}' \
@@ -139,6 +176,9 @@ jobs:
               echo "- Main port version: $VERSION"
             else
               echo "- Main port version: selected branch contents"
+            fi
+            if [[ -n "$FEATURES" ]]; then
+              echo "- Features: $FEATURES"
             fi
             echo "- Triplet: $VCPKG_TRIPLET"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -195,6 +235,39 @@ jobs:
             }
           }
 
+          if (-not [string]::IsNullOrWhiteSpace($env:FEATURES)) {
+            $selectedFeatures = @($env:FEATURES -split ',' | ForEach-Object { $_.Trim() })
+            if ($selectedFeatures.Count -eq 0 -or @($selectedFeatures | Where-Object { [string]::IsNullOrEmpty($_) }).Count -gt 0) {
+              throw 'Features must be comma-separated non-empty names'
+            }
+
+            $manifestPath = Join-Path $manifestRoot 'vcpkg.json'
+            $manifestData = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
+            $matches = @($manifestData.dependencies | Where-Object {
+              ($_ -is [string] -and $_ -eq $env:PORT) -or
+                ($_ -isnot [string] -and $_.name -eq $env:PORT)
+            })
+            if ($matches.Count -ne 1) {
+              throw "Port dependency was not found exactly once in the example manifest"
+            }
+
+            $manifestData.dependencies = @(
+              $manifestData.dependencies | ForEach-Object {
+                if ($_ -is [string] -and $_ -eq $env:PORT) {
+                  [ordered]@{
+                    name = $_
+                    features = $selectedFeatures
+                  }
+                } elseif ($_ -isnot [string] -and $_.name -eq $env:PORT) {
+                  $_ | Add-Member -MemberType NoteProperty -Name features -Value $selectedFeatures -Force -PassThru
+                } else {
+                  $_
+                }
+              }
+            )
+            $manifestData | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $manifestPath -Encoding utf8NoBOM
+          }
+
           $baseline = (git -C $env:VCPKG_ROOT rev-parse HEAD).Trim()
           if ($LASTEXITCODE -ne 0) {
             throw 'Could not determine the vcpkg baseline'
@@ -215,6 +288,9 @@ jobs:
             Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '- Main port version: selected branch contents'
           } else {
             Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- Main port version: $($env:VERSION)"
+          }
+          if (-not [string]::IsNullOrWhiteSpace($env:FEATURES)) {
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- Features: $($env:FEATURES)"
           }
           Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- Triplet: $($env:VCPKG_TRIPLET)"
 
