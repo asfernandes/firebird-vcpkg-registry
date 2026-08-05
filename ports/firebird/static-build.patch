@@ -1,9 +1,9 @@
 diff --git a/.github/workflows/static-build.yml b/.github/workflows/static-build.yml
 new file mode 100644
-index 0000000000..6bdff47401
+index 0000000000..205811b9ca
 --- /dev/null
 +++ b/.github/workflows/static-build.yml
-@@ -0,0 +1,240 @@
+@@ -0,0 +1,241 @@
 +name: Static Client Build
 +
 +on:
@@ -35,8 +35,8 @@ index 0000000000..6bdff47401
 +          gcc -v
 +          ld -v
 +          make -v
-+          cd /home/ctng/firebird-build
-+          /firebird/autogen.sh \
++          cd /firebird
++          ./autogen.sh \
 +            --host=$BUILD_ARCH \
 +            --prefix=/opt/firebird \
 +            --enable-binreloc \
@@ -53,11 +53,11 @@ index 0000000000..6bdff47401
 +            exit 1
 +          fi
 +          echo "Linking example with CXX=$CXX"
-+          "$CXX" /firebird/examples/interfaces/01.create.cpp \
++          "$CXX" examples/interfaces/01.create.cpp \
 +            -I/firebird/src/include \
-+            -I/home/ctng/firebird-build/gen/Release/firebird/include \
-+            -L/home/ctng/firebird-build/gen/Release/firebird/lib \
-+            -L/home/ctng/firebird-build/temp/Release \
++            -Igen/Release/firebird/include \
++            -Lgen/Release/firebird/lib \
++            -Ltemp/Release \
 +            -lfbclient -ltommath -ltomcrypt -lz -ldl -pthread \
 +            -o /tmp/01.create
 +          EOF
@@ -66,11 +66,10 @@ index 0000000000..6bdff47401
 +      - name: Build
 +        run: |
 +          docker run --platform ${{ (matrix.arch == 'x64' && 'amd64') || 'i386' }} --rm \
-+            -e CTNG_UID=$(id -u) -e CTNG_GID=$(id -g) \
-+            -v ${{ github.workspace }}:/firebird:ro \
-+            -v ${{ github.workspace }}/gen:/home/ctng/firebird-build/gen \
++            --user $(id -u):$(id -g) \
++            -v ${{ github.workspace }}:/firebird \
 +            -v /tmp/build-static-client.sh:/build.sh:ro \
-+            firebirdsql/firebird-builder-linux:fb6-${{ matrix.arch }}-ng-v2
++            asfernandes/firebird-builder:fb5-${{ matrix.arch }}-ng-v1
 +
 +      - name: Upload static library
 +        uses: actions/upload-artifact@v4
@@ -138,7 +137,7 @@ index 0000000000..6bdff47401
 +
 +      - name: Prepare - Install tools
 +        run: |
-+          brew install --quiet automake autoconf-archive libtool ninja llvm
++          brew install --quiet automake autoconf-archive libtool ninja llvm python-setuptools
 +          echo "${{ (matrix.arch == 'arm64' && '/opt/homebrew/opt/llvm/bin') || '/usr/local/opt/llvm/bin' }}" >> $GITHUB_PATH
 +
 +      - name: Restore vcpkg cache
@@ -155,6 +154,8 @@ index 0000000000..6bdff47401
 +        run: |
 +          export LIBTOOLIZE=glibtoolize
 +          export LIBTOOL=glibtool
++          export PATH="$(brew --prefix python@3.11)/bin:$PATH"
++          export SDKROOT=$(xcrun --show-sdk-path)
 +          ./autogen.sh --with-builtin-tommath --with-builtin-tomcrypt --enable-client-only
 +          make client_static -j4
 +
@@ -1508,7 +1509,7 @@ index 0000000000..3d29f075dd
 +  </ItemDefinitionGroup>
 +</Project>
 diff --git a/builds/win32/msvc15/common.vcxproj b/builds/win32/msvc15/common.vcxproj
-index a9fc6ff024..b9ce437f1c 100644
+index a9fc6ff024..9574075ed3 100644
 --- a/builds/win32/msvc15/common.vcxproj
 +++ b/builds/win32/msvc15/common.vcxproj
 @@ -9,6 +9,14 @@
@@ -1697,7 +1698,7 @@ index a9fc6ff024..b9ce437f1c 100644
    </PropertyGroup>
    <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
      <ClCompile>
-@@ -359,6 +449,53 @@
+@@ -359,6 +449,55 @@
        <AdditionalDependencies>ws2_32.lib;../../../extern/libtommath/lib/$(PlatformName)\$(Configuration)\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\$(Configuration)\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\$(Configuration)\decnumber.lib;../../../extern/ttmath\$(Configuration)\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
      </Lib>
    </ItemDefinitionGroup>
@@ -1731,7 +1732,8 @@ index a9fc6ff024..b9ce437f1c 100644
 +      <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;SUPERSERVER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
 +    </ClCompile>
 +    <Lib>
-+      <AdditionalDependencies>../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;../../../extern/ttmath\Release\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'!='1'">../../../extern/libtommath/lib/$(PlatformName)\Release\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\Release\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;../../../extern/ttmath\Release\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">../../../extern/libtommath/lib/$(PlatformName)\Release\tommath.lib;../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;../../../extern/ttmath\Release\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
 +    </Lib>
 +  </ItemDefinitionGroup>
 +  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='DebugStatic|x64'">
@@ -1745,7 +1747,8 @@ index a9fc6ff024..b9ce437f1c 100644
 +      </PrecompiledHeader>
 +    </ClCompile>
 +    <Lib>
-+      <AdditionalDependencies>../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;../../../extern/ttmath\Debug\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'!='1'">../../../extern/libtommath/lib/$(PlatformName)\Debug\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\Debug\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;../../../extern/ttmath\Debug\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">../../../extern/libtommath/lib/$(PlatformName)\Debug\tommath.lib;../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;../../../extern/ttmath\Debug\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
 +    </Lib>
 +  </ItemDefinitionGroup>
    <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
@@ -2908,7 +2911,7 @@ index 7ea8106e93..b048a512bb 100644
  			bDllProcessExiting = (reserved != NULL);
  			dDllUnloadTID = GetCurrentThreadId();
 diff --git a/src/plugins/crypt/chacha/ChaCha.cpp b/src/plugins/crypt/chacha/ChaCha.cpp
-index 02cb9c76f7..b8dd4d134f 100644
+index 02cb9c76f7..d474c974b0 100644
 --- a/src/plugins/crypt/chacha/ChaCha.cpp
 +++ b/src/plugins/crypt/chacha/ChaCha.cpp
 @@ -28,6 +28,7 @@
@@ -2919,7 +2922,7 @@ index 02cb9c76f7..b8dd4d134f 100644
  #include <tomcrypt.h>
  #include <../common/os/guid.h>
  
-@@ -189,10 +190,18 @@ SimpleFactory<ChaCha<8> > factory64;
+@@ -189,10 +190,20 @@ SimpleFactory<ChaCha<8> > factory64;
  
  } // anonymous namespace
  
@@ -2932,6 +2935,7 @@ index 02cb9c76f7..b8dd4d134f 100644
 +	}
 +} // namespace Crypt
 +
++#ifndef STATIC_CLIENT
  extern "C" FB_DLL_EXPORT void FB_PLUGIN_ENTRY_POINT(Firebird::IMaster* master)
  {
  	CachedMasterInterface::set(master);
@@ -2940,6 +2944,7 @@ index 02cb9c76f7..b8dd4d134f 100644
 +	Crypt::registerChaCha(PluginManagerInterfacePtr());
  	getUnloadDetector()->registerMe();
  }
++#endif
 diff --git a/src/plugins/crypt/chacha/ChaCha.h b/src/plugins/crypt/chacha/ChaCha.h
 new file mode 100644
 index 0000000000..367160ac19
