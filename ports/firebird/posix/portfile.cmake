@@ -9,6 +9,9 @@ endif()
 if(VCPKG_TARGET_IS_OSX)
     set(ENV{LIBTOOLIZE} glibtoolize)
     set(ENV{LIBTOOL} glibtool)
+    if(VCPKG_LIBRARY_LINKAGE STREQUAL "static")
+        vcpkg_add_to_path(PREPEND "${CURRENT_HOST_INSTALLED_DIR}/tools/llvm")
+    endif()
 endif()
 
 set(FIREBIRD_CONFIGURE_OPTIONS

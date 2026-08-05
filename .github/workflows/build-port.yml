@@ -303,11 +303,7 @@ jobs:
       - name: Install prerequisites
         if: runner.os == 'MacOS'
         run: |
-          brew install --quiet autoconf autoconf-archive automake libtool llvm
-
-      - name: Add LLVM tools to PATH
-        if: runner.os == 'MacOS'
-        run: echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+          brew install --quiet autoconf autoconf-archive automake libtool
 
       - name: Build selected example
         if: runner.os != 'Windows'
