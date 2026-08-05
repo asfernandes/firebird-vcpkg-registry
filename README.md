@@ -62,20 +62,6 @@ Static client library support is available in Firebird's upstream `master` branc
 Firebird v5.0.4, where it is not yet present, so the v5 port carries the support as
 `ports/firebird/static-build.patch`.
 
-Static macOS builds use the host LLVM tools, including `llvm-objcopy`, to post-process the client archive. When
-consuming `firebird` from a manifest, repeat the host dependency with defaults disabled so vcpkg does not enable
-LLVM's unrelated default features transitively:
-
-```json
-{
-  "name": "llvm",
-  "host": true,
-  "default-features": false,
-  "features": [ "default-targets", "tools" ],
-  "platform": "osx & static"
-}
-```
-
 The client can also load dependencies dynamically—most notably `icu` for time-zone handling—so those dependencies must
 be available as dynamic libraries or Firebird will fail to load them.
 

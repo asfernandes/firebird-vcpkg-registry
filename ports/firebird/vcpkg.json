@@ -17,16 +17,6 @@
       "platform": "!windows | (windows & static)"
     },
     {
-      "name": "llvm",
-      "host": true,
-      "default-features": false,
-      "features": [
-        "default-targets",
-        "tools"
-      ],
-      "platform": "osx & static"
-    },
-    {
       "name": "ncurses",
       "host": true,
       "platform": "!windows"

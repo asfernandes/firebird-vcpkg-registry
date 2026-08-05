@@ -5,16 +5,6 @@
     {
       "name": "fb-cpp",
       "default-features": true
-    },
-    {
-      "name": "llvm",
-      "host": true,
-      "default-features": false,
-      "features": [
-        "default-targets",
-        "tools"
-      ],
-      "platform": "osx & static"
     }
   ]
 }
