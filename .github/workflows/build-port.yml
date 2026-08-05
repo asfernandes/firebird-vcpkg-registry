@@ -64,7 +64,7 @@ jobs:
             architecture: x64
           - os: windows-latest
             linkage: static
-            triplet: x64-windows-static
+            triplet: x64-windows-static-md
             architecture: x64
           - os: windows-latest
             linkage: dynamic
