@@ -8,6 +8,7 @@ int main()
 	[[maybe_unused]] fbcpp::BoostDecFloat34 boostDecFloat34;
 
 	fbcpp::Client client(Firebird::fb_get_master_interface());
+	client.shutdown();
 
 	return 0;
 }
