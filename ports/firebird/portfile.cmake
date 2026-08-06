@@ -10,7 +10,7 @@ vcpkg_from_github(
         windows-vs2026-build-files.patch
         windows-vs2026-build-script.patch
         static-build.patch
-        windows-paths.diff
+        windows-paths.patch
         windows-timeout.patch
         tomcrypt-link.patch
         osx-icu-rpath.patch
