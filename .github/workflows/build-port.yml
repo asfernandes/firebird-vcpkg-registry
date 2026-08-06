@@ -33,26 +33,57 @@ jobs:
           - os: ubuntu-latest
             linkage: static
             triplet: x64-linux
+            architecture: x64
           - os: ubuntu-latest
             linkage: dynamic
             triplet: x64-linux-dynamic
+            architecture: x64
+          - os: ubuntu-24.04-arm
+            linkage: static
+            triplet: arm64-linux
+            architecture: arm64
+          - os: ubuntu-24.04-arm
+            linkage: dynamic
+            triplet: arm64-linux-dynamic
+            architecture: arm64
           - os: macos-latest
             linkage: static
             triplet: arm64-osx
+            architecture: arm64
           - os: macos-latest
             linkage: dynamic
             triplet: arm64-osx-dynamic
+            architecture: arm64
+          - os: macos-15-intel
+            linkage: static
+            triplet: x64-osx
+            architecture: x64
+          - os: macos-15-intel
+            linkage: dynamic
+            triplet: x64-osx-dynamic
+            architecture: x64
           - os: windows-latest
             linkage: static
-            triplet: x64-windows-static
+            triplet: x64-windows-static-md
+            architecture: x64
           - os: windows-latest
             linkage: dynamic
             triplet: x64-windows
+            architecture: x64
+          #- os: windows-11-arm
+          #  linkage: static
+          #  triplet: arm64-windows-static
+          #  architecture: arm64
+          #- os: windows-11-arm
+          #  linkage: dynamic
+          #  triplet: arm64-windows
+          #  architecture: arm64
     env:
       PORT: ${{ inputs.port }}
       VERSION: ${{ inputs.version }}
       FEATURES: ${{ inputs.features }}
       VCPKG_TRIPLET: ${{ matrix.triplet }}
+      VCPKG_ARCHITECTURE: ${{ matrix.architecture }}
 
     steps:
       - name: Checkout selected branch
@@ -303,11 +334,7 @@ jobs:
       - name: Install prerequisites
         if: runner.os == 'MacOS'
         run: |
-          brew install --quiet autoconf autoconf-archive automake libtool llvm
-
-      - name: Add LLVM tools to PATH
-        if: runner.os == 'MacOS'
-        run: echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+          brew install --quiet autoconf autoconf-archive automake libtool
 
       - name: Build selected example
         if: runner.os != 'Windows'
@@ -334,10 +361,20 @@ jobs:
             exit /b 1
           )
 
-          for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VS_PATH=%%i"
-          for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationVersion`) do set "VS_VERSION=%%i"
+          set "VS_ARCH=amd64"
+          set "VS_HOST_ARCH=amd64"
+          set "CMAKE_ARCH=x64"
+          set "VC_COMPONENT=Microsoft.VisualStudio.Component.VC.Tools.x86.x64"
+          if /i "%VCPKG_ARCHITECTURE%"=="arm64" (
+            set "VS_ARCH=arm64"
+            set "CMAKE_ARCH=ARM64"
+            set "VC_COMPONENT=Microsoft.VisualStudio.Component.VC.Tools.ARM64"
+          )
+
+          for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -requires %VC_COMPONENT% -property installationPath`) do set "VS_PATH=%%i"
+          for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -requires %VC_COMPONENT% -property installationVersion`) do set "VS_VERSION=%%i"
           if not defined VS_PATH (
-            echo Could not find a Visual Studio installation with the x64 C++ tools 1>&2
+            echo Could not find a Visual Studio installation with the required %VCPKG_ARCHITECTURE% C++ tools 1>&2
             exit /b 1
           )
 
@@ -357,11 +394,11 @@ jobs:
             exit /b 1
           )
 
-          call "%VS_TOOLS%\VsDevCmd.bat" -arch=amd64 -host_arch=amd64 -no_logo
+          call "%VS_TOOLS%\VsDevCmd.bat" -arch=%VS_ARCH% -host_arch=%VS_HOST_ARCH% -no_logo
           if errorlevel 1 exit /b 1
           set "BUILD_ROOT=%RUNNER_TEMP%\example-build"
           if exist "%BUILD_ROOT%" rmdir /s /q "%BUILD_ROOT%"
-          cmake -S "%RUNNER_TEMP%\vcpkg-manifest" -B "%BUILD_ROOT%" -A x64 -DCMAKE_BUILD_TYPE=Release -DVCPKG_TARGET_TRIPLET="%VCPKG_TRIPLET%" "-DVCPKG_INSTALL_OPTIONS=--clean-after-build;--disable-metrics"
+          cmake -S "%RUNNER_TEMP%\vcpkg-manifest" -B "%BUILD_ROOT%" -A %CMAKE_ARCH% -DCMAKE_BUILD_TYPE=Release -DVCPKG_TARGET_TRIPLET="%VCPKG_TRIPLET%" "-DVCPKG_INSTALL_OPTIONS=--clean-after-build;--disable-metrics"
           if errorlevel 1 exit /b 1
           cmake --build "%BUILD_ROOT%" --config Release --parallel
           if errorlevel 1 exit /b 1
