@@ -1,10 +1,10 @@
 {
   "name": "fb-cpp",
-  "version-semver": "0.0.5",
+  "version-semver": "0.0.6",
   "description": "A modern C++ wrapper for the Firebird database API",
   "homepage": "https://github.com/asfernandes/fb-cpp",
   "license": "MIT",
-  "supports": "(windows & !uwp) | linux | osx",
+  "supports": "!uwp",
   "dependencies": [
     "firebird",
     {
@@ -17,10 +17,17 @@
     }
   ],
   "default-features": [
+    "boost-decimal",
     "boost-dll",
     "boost-multiprecision"
   ],
   "features": {
+    "boost-decimal": {
+      "description": "Enable Boost.Decimal support for DECFLOAT types",
+      "dependencies": [
+        "boost-decimal"
+      ]
+    },
     "boost-dll": {
       "description": "Enable Boost.DLL support for runtime dynamic loading of Firebird client library",
       "dependencies": [
