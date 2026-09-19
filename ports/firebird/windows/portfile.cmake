@@ -22,12 +22,20 @@ if(NOT "chacha" IN_LIST FEATURES)
     list(APPEND FB_BUILD_ARGS WITHOUT_TOMCRYPT)
 endif()
 
+# The MSVC projects know nothing about vcpkg include dirs (unlike the POSIX
+# build, which gets them via CPPFLAGS/CXXFLAGS). Pass them in a dedicated
+# variable; setenvvar.bat appends it to INCLUDE after vcvarsall (which resets
+# INCLUDE) runs. A custom variable is used because vcvarsall would wipe an
+# INCLUDE value set here.
+set(FB_VCPKG_INCLUDE "${CURRENT_INSTALLED_DIR}/include")
+
 
 # Release build
 
 vcpkg_execute_build_process(
     COMMAND ${CMAKE_COMMAND} -E env
         "FB_PROCESSOR_ARCHITECTURE=${FB_PROCESSOR_ARCHITECTURE}"
+        "FIREBIRD_VCPKG_INCLUDE=${FB_VCPKG_INCLUDE}"
         run_all.bat
         JUSTBUILD
         RELEASE
@@ -87,6 +95,7 @@ file(
 vcpkg_execute_build_process(
     COMMAND ${CMAKE_COMMAND} -E env
         "FB_PROCESSOR_ARCHITECTURE=${FB_PROCESSOR_ARCHITECTURE}"
+        "FIREBIRD_VCPKG_INCLUDE=${FB_VCPKG_INCLUDE}"
         run_all.bat
         JUSTBUILD
         DEBUG

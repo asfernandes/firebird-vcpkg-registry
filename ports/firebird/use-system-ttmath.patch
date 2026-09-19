@@ -1,0 +1,138 @@
+diff --git a/builds/win32/make_boot.bat b/builds/win32/make_boot.bat
+index bc4e2f1..4d12515 100644
+--- a/builds/win32/make_boot.bat
++++ b/builds/win32/make_boot.bat
+@@ -38,9 +38,6 @@ if "!ERRLEV!"=="1" goto :END
+ call :decNumber
+ if "!ERRLEV!"=="1" goto :END
+ 
+-if "%FB_TARGET_PLATFORM%"=="x64" call :ttmath
+-if "!ERRLEV!"=="1" goto :END
+-
+ call :zlib
+ if "!ERRLEV!"=="1" goto :END
+ 
+@@ -172,20 +169,6 @@ if errorlevel 1 call :boot2 libcds%FB_OBJ_DIR%
+ set FB_LIBCDS=
+ goto :EOF
+ 
+-::===================
+-:: BUILD ttmath
+-:ttmath
+-@echo.
+-@echo Building ttmath (%FB_OBJ_DIR%)...
+-@mkdir %FB_ROOT_PATH%\extern\ttmath\%FB_CONFIG% 2>nul
+-if /I "%FB_CONFIG%"=="debug" (
+-  @ml64.exe /c /Zi /Fo %FB_ROOT_PATH%\extern\ttmath\%FB_CONFIG%\ttmathuint_x86_64_msvc.obj %FB_ROOT_PATH%\extern\ttmath\ttmathuint_x86_64_msvc.asm
+-) else (
+-  @ml64.exe /c /Fo %FB_ROOT_PATH%\extern\ttmath\%FB_CONFIG%\ttmathuint_x86_64_msvc.obj %FB_ROOT_PATH%\extern\ttmath\ttmathuint_x86_64_msvc.asm
+-)
+-if errorlevel 1 call :boot2 ttmath_%FB_OBJ_DIR%
+-goto :EOF
+-
+ ::===================
+ :: BUILD re2
+ :re2
+diff --git a/builds/win32/msvc15/common.vcxproj b/builds/win32/msvc15/common.vcxproj
+index a08fe86..631c7f2 100644
+--- a/builds/win32/msvc15/common.vcxproj
++++ b/builds/win32/msvc15/common.vcxproj
+@@ -431,7 +431,7 @@
+       <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;SUPERSERVER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+     </ClCompile>
+     <Lib>
+-      <AdditionalDependencies>ws2_32.lib;../../../extern/libtommath/lib/$(PlatformName)\$(Configuration)\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\$(Configuration)\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\$(Configuration)\decnumber.lib;../../../extern/ttmath\$(Configuration)\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies>ws2_32.lib;../../../extern/libtommath/lib/$(PlatformName)\$(Configuration)\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\$(Configuration)\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\$(Configuration)\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
+     </Lib>
+   </ItemDefinitionGroup>
+   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+@@ -445,7 +445,7 @@
+       </PrecompiledHeader>
+     </ClCompile>
+     <Lib>
+-      <AdditionalDependencies>ws2_32.lib;../../../extern/libtommath/lib/$(PlatformName)\$(Configuration)\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\$(Configuration)\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\$(Configuration)\decnumber.lib;../../../extern/ttmath\$(Configuration)\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies>ws2_32.lib;../../../extern/libtommath/lib/$(PlatformName)\$(Configuration)\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\$(Configuration)\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\$(Configuration)\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
+     </Lib>
+   </ItemDefinitionGroup>
+   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'">
+@@ -478,8 +478,8 @@
+       <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;SUPERSERVER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+     </ClCompile>
+     <Lib>
+-      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'!='1'">../../../extern/libtommath/lib/$(PlatformName)\Release\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\Release\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;../../../extern/ttmath\Release\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
+-      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">../../../extern/libtommath/lib/$(PlatformName)\Release\tommath.lib;../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;../../../extern/ttmath\Release\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'!='1'">../../../extern/libtommath/lib/$(PlatformName)\Release\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\Release\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">../../../extern/libtommath/lib/$(PlatformName)\Release\tommath.lib;../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
+     </Lib>
+   </ItemDefinitionGroup>
+   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='DebugStatic|x64'">
+@@ -493,8 +493,8 @@
+       </PrecompiledHeader>
+     </ClCompile>
+     <Lib>
+-      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'!='1'">../../../extern/libtommath/lib/$(PlatformName)\Debug\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\Debug\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;../../../extern/ttmath\Debug\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
+-      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">../../../extern/libtommath/lib/$(PlatformName)\Debug\tommath.lib;../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;../../../extern/ttmath\Debug\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'!='1'">../../../extern/libtommath/lib/$(PlatformName)\Debug\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\Debug\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">../../../extern/libtommath/lib/$(PlatformName)\Debug\tommath.lib;../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
+     </Lib>
+   </ItemDefinitionGroup>
+   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+diff --git a/src/common/Int128.cpp b/src/common/Int128.cpp
+index 76f250e..ec85b0f 100644
+--- a/src/common/Int128.cpp
++++ b/src/common/Int128.cpp
+@@ -35,6 +35,7 @@
+ #include "DecFloat.h"
+ 
+ #include <limits>
++#include <string>
+ 
+ #include <stdlib.h>
+ #include <string.h>
+@@ -424,7 +425,11 @@ void Int128::toString(int scale, unsigned length, char* to) const
+ 
+ void Int128::toString(int scale, string& to) const
+ {
+-	v.ToStringBase(to);
++	// Upstream ttmath keeps the generic ToStringBase() private, so go
++	// through the public ToString() overload and convert the result.
++	std::string tmp;
++	v.ToString(tmp);
++	to = tmp.c_str();
+ 	bool sgn = to[0] == '-';
+ 	if (sgn)
+ 		to.erase(0, 1);
+diff --git a/src/common/Int128.h b/src/common/Int128.h
+index 446a744..7451915 100644
+--- a/src/common/Int128.h
++++ b/src/common/Int128.h
+@@ -360,7 +360,7 @@ public:
+ 
+ #else // FB_USE_ABSEIL_INT128
+ 
+-#include "../../extern/ttmath/ttmath.h"
++#include <ttmath/ttmath.h>
+ 
+ namespace Firebird {
+ 
+diff --git a/builds/win32/setenvvar.bat b/builds/win32/setenvvar.bat
+index b9e0751..621a777 100644
+--- a/builds/win32/setenvvar.bat
++++ b/builds/win32/setenvvar.bat
+@@ -173,6 +173,16 @@ goto :parse_args
+   )
+ )
+ 
++:: vcpkg builds pass extra include dirs (e.g. ttmath) via FIREBIRD_VCPKG_INCLUDE.
++:: vcvarsall above resets INCLUDE, so append after it. Guarded to run once per
++:: process as this file is called several times during a build.
++@if defined FIREBIRD_VCPKG_INCLUDE (
++  @if not defined FB_VCPKG_INCLUDE_SET (
++    @set "INCLUDE=%INCLUDE%;%FIREBIRD_VCPKG_INCLUDE%"
++    @set FB_VCPKG_INCLUDE_SET=1
++  )
++)
++
+ :: VS_VER is used to locate the correct set of Visual Studio project files.
+ :: They are stored in builds\win32\$VS_VER%. Currently (2022-06-16) only one set exists.
+ @set VS_VER=msvc%MSVC_VERSION%

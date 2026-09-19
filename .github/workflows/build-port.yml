@@ -117,6 +117,59 @@ jobs:
 
           Add-Content -LiteralPath $env:GITHUB_ENV -Value "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT"
 
+      - name: Update vcpkg to pick up new ports
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # The preinstalled vcpkg checkout may predate ports this registry depends on
+          # (e.g. ttmath), so fast-forward it before resolving the builtin baseline.
+          if ! git -C "$VCPKG_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            echo "VCPKG_ROOT ($VCPKG_ROOT) is not a git checkout, cannot update vcpkg" >&2
+            exit 1
+          fi
+
+          git -C "$VCPKG_ROOT" fetch --depth 1 origin master
+          git -C "$VCPKG_ROOT" reset --hard FETCH_HEAD
+          git -C "$VCPKG_ROOT" rev-parse HEAD
+
+          # Sync the vcpkg binary with the updated checkout: newer repo state
+          # (e.g. vcpkg-tools.json schema changes) may require a newer tool.
+          # This downloads the matching prebuilt binary, it does not compile.
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh"
+
+      - name: Update vcpkg to pick up new ports
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          # The preinstalled vcpkg checkout may predate ports this registry depends on
+          # (e.g. ttmath), so fast-forward it before resolving the builtin baseline.
+          git -C $env:VCPKG_ROOT rev-parse --is-inside-work-tree | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            throw "VCPKG_ROOT ($env:VCPKG_ROOT) is not a git checkout, cannot update vcpkg"
+          }
+
+          git -C $env:VCPKG_ROOT fetch --depth 1 origin master
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Could not fetch the vcpkg repository'
+          }
+          git -C $env:VCPKG_ROOT reset --hard FETCH_HEAD
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Could not update the vcpkg checkout'
+          }
+          git -C $env:VCPKG_ROOT rev-parse HEAD
+
+          # Sync the vcpkg binary with the updated checkout: newer repo state
+          # (e.g. vcpkg-tools.json schema changes) may require a newer tool.
+          # This downloads the matching prebuilt binary, it does not compile.
+          & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat"
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Could not bootstrap vcpkg'
+          }
+
       - name: Prepare manifest and branch overlay
         if: runner.os != 'Windows'
         shell: bash

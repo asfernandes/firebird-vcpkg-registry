@@ -15,7 +15,12 @@ vcpkg_from_github(
         tomcrypt-link.patch
         osx-icu-rpath.patch
         osx-unvcpkg.patch
+        use-system-ttmath.patch
 )
+
+# Use the ttmath port instead of the bundled copy in extern/ttmath
+# (little-endian builds; big-endian builds use the vendored Abseil subset).
+file(REMOVE_RECURSE "${SOURCE_PATH}/extern/ttmath")
 
 if(VCPKG_TARGET_IS_WINDOWS)
     include("${CMAKE_CURRENT_LIST_DIR}/windows/portfile.cmake")
