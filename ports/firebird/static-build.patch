@@ -1,6 +1,6 @@
 diff --git a/.github/workflows/static-build.yml b/.github/workflows/static-build.yml
 new file mode 100644
-index 0000000000..f283bfe84f
+index 0000000..f283bfe
 --- /dev/null
 +++ b/.github/workflows/static-build.yml
 @@ -0,0 +1,346 @@
@@ -351,7 +351,7 @@ index 0000000000..f283bfe84f
 +          name: firebird-windows-${{ matrix.platform }}-static-client
 +          path: output_${{ env.FB_LIBRARY_PLATFORM }}_release\lib\fbclient_static_ms.lib
 diff --git a/builds/cmake/Configure.cmake b/builds/cmake/Configure.cmake
-index 9faa0e50eb..75db4b9726 100644
+index 9faa0e5..75db4b9 100644
 --- a/builds/cmake/Configure.cmake
 +++ b/builds/cmake/Configure.cmake
 @@ -91,6 +91,7 @@ if (${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang")
@@ -363,10 +363,10 @@ index 9faa0e50eb..75db4b9726 100644
  string(TOUPPER ${CMAKE_SYSTEM_NAME} CMAKE_SYSTEM_NAME_UPPER)
  set(${CMAKE_SYSTEM_NAME_UPPER} 1)
 diff --git a/builds/posix/Makefile.in b/builds/posix/Makefile.in
-index 8f698b0a2a..61c5a0ef1e 100644
+index f5d033b..b7d2abe 100644
 --- a/builds/posix/Makefile.in
 +++ b/builds/posix/Makefile.in
-@@ -254,7 +254,7 @@ endif
+@@ -258,7 +258,7 @@ endif
  #
  
  %.vers: $(ROOT)/builds/posix/%.vers
@@ -375,7 +375,7 @@ index 8f698b0a2a..61c5a0ef1e 100644
  
  export_lists: $(ALLVERS)
  
-@@ -465,6 +465,64 @@ $(LIBFIREBIRD_FULLNAME):	$(YValve_Objects) $(Remote_Client_Objects) $(COMMON_LIB
+@@ -473,6 +473,64 @@ $(LIBFIREBIRD_FULLNAME):	$(YValve_Objects) $(Remote_Client_Objects) $(COMMON_LIB
  	$(LINK_FIREBIRD) -o $@ $^ $(LINK_FIREBIRD_LIBS) $(call LIB_LINK_DARWIN_INSTALL_NAME,lib/libfbclient.$(SHRLIB_EXT))
  
  
@@ -440,7 +440,7 @@ index 8f698b0a2a..61c5a0ef1e 100644
  #___________________________________________________________________________
  # core part - jrd's engine
  #
-@@ -910,6 +968,7 @@ clean_makefiles:
+@@ -923,6 +981,7 @@ clean_makefiles:
  	$(RM) $(GEN_ROOT)/make*
  	-$(RM) $(GEN_ROOT)/darwin.defaults
  	-$(RM) $(GEN_ROOT)/vers.sh
@@ -449,7 +449,7 @@ index 8f698b0a2a..61c5a0ef1e 100644
  	-$(RM) $(GEN_ROOT)/examples/Make*
  	$(RM) $(ROOT)/Makefile
 diff --git a/builds/posix/darwin.defaults b/builds/posix/darwin.defaults
-index d8350092c2..a7c5de636e 100644
+index 2e92636..0d11c4c 100644
 --- a/builds/posix/darwin.defaults
 +++ b/builds/posix/darwin.defaults
 @@ -35,3 +35,8 @@ PLATFORM_FALLBACK=os/posix
@@ -462,10 +462,10 @@ index d8350092c2..a7c5de636e 100644
 +# external objcopy-compatible tool is needed.
 +STATIC_CLIENT_SLIM_MODE = darwin
 diff --git a/builds/posix/make.defaults b/builds/posix/make.defaults
-index 0d5717dde4..366b1a45f6 100755
+index c904356..8f958d1 100755
 --- a/builds/posix/make.defaults
 +++ b/builds/posix/make.defaults
-@@ -196,6 +196,21 @@ CXX =	@CXX@
+@@ -197,6 +197,21 @@ CXX =	@CXX@
  LD =	@CXX@
  OBJCOPY = @OBJCOPY@
  READELF = @READELF@
@@ -487,7 +487,7 @@ index 0d5717dde4..366b1a45f6 100755
  
  AC_CFLAGS = @CFLAGS@
  AC_CXXFLAGS = @CXXFLAGS@
-@@ -261,6 +276,13 @@ LIBFIREBIRD_FULLNAME = $(LIB)/$(LibraryFullName)
+@@ -262,6 +277,13 @@ LIBFIREBIRD_FULLNAME = $(LIB)/$(LibraryFullName)
  LIBFIREBIRD_SONAME = $(LIB)/$(LibraryBaseName)
  LIBFIREBIRD_BASENAME = $(LIB)/$(LibrarySoName)
  
@@ -501,13 +501,13 @@ index 0d5717dde4..366b1a45f6 100755
  # The firebird engine library name
  
  EngineFileName=libEngine${OdsVersion}
-@@ -446,4 +468,3 @@ FIREBIRD_MSG    = $(FIREBIRD)/firebird.msg
+@@ -447,4 +469,3 @@ FIREBIRD_MSG    = $(FIREBIRD)/firebird.msg
  # For want of a better suggestion we may as well default to posix
  PLATFORM_PATH	=	os/posix
  TRACE_OS_Sources	=
 -
 diff --git a/builds/posix/make.shared.variables b/builds/posix/make.shared.variables
-index cccded7b52..f55db6a793 100644
+index cccded7..f55db6a 100644
 --- a/builds/posix/make.shared.variables
 +++ b/builds/posix/make.shared.variables
 @@ -74,7 +74,15 @@ Remote_Client:= $(call dirObjects,remote/client) $(call dirObjects,auth/SecureRe
@@ -528,7 +528,7 @@ index cccded7b52..f55db6a793 100644
  # Chacha plugin
 diff --git a/builds/posix/static_client.sh.in b/builds/posix/static_client.sh.in
 new file mode 100644
-index 0000000000..607f0ceb27
+index 0000000..607f0ce
 --- /dev/null
 +++ b/builds/posix/static_client.sh.in
 @@ -0,0 +1,206 @@
@@ -740,7 +740,7 @@ index 0000000000..607f0ceb27
 +rm -f "$REDEFINE" "$API_SYMS" "$DEFINED_SYMS"
 diff --git a/builds/win32/compile_static.bat b/builds/win32/compile_static.bat
 new file mode 100644
-index 0000000000..4bfd6a9376
+index 0000000..4bfd6a9
 --- /dev/null
 +++ b/builds/win32/compile_static.bat
 @@ -0,0 +1,60 @@
@@ -806,7 +806,7 @@ index 0000000000..4bfd6a9376
 +goto :EOF
 diff --git a/builds/win32/fix_fbclient_static.bat b/builds/win32/fix_fbclient_static.bat
 new file mode 100644
-index 0000000000..d4d01aebba
+index 0000000..d4d01ae
 --- /dev/null
 +++ b/builds/win32/fix_fbclient_static.bat
 @@ -0,0 +1,235 @@
@@ -1046,7 +1046,7 @@ index 0000000000..d4d01aebba
 +set /a RenameCount+=1
 +goto :eof
 diff --git a/builds/win32/make_all.bat b/builds/win32/make_all.bat
-index ebeb3910dd..6792a42aa8 100644
+index b202480..5c43b6f 100644
 --- a/builds/win32/make_all.bat
 +++ b/builds/win32/make_all.bat
 @@ -18,10 +18,21 @@ set ERRLEV=0
@@ -1085,23 +1085,20 @@ index ebeb3910dd..6792a42aa8 100644
  	copy %FB_ROOT_PATH%\temp\%FB_OBJ_DIR%\firebird\intl\* %FB_OUTPUT_DIR%\intl >nul
  	copy %FB_ROOT_PATH%\temp\%FB_OBJ_DIR%\firebird\plugins\udr\*.dll %FB_OUTPUT_DIR%\plugins\udr >nul
 diff --git a/builds/win32/make_boot.bat b/builds/win32/make_boot.bat
-index 3cbe542a25..bc4e2f10e1 100644
+index cad7915..55dd87d 100644
 --- a/builds/win32/make_boot.bat
 +++ b/builds/win32/make_boot.bat
-@@ -145,9 +145,11 @@ goto :EOF
- @echo Building LibTomMath (%FB_OBJ_DIR%)...
- @call compile.bat extern\libtommath\libtommath_MSVC%MSVC_VERSION% libtommath_%FB_CONFIG%_%FB_TARGET_PLATFORM%.log libtommath
- if errorlevel 1 call :boot2 libtommath_%FB_OBJ_DIR%
-+@if defined FBBUILD_WITHOUT_TOMCRYPT goto :LibTomDone
- @echo Building LibTomCrypt (%FB_OBJ_DIR%)...
- @call compile.bat extern\libtomcrypt\libtomcrypt_MSVC%MSVC_VERSION% libtomcrypt_%FB_CONFIG%_%FB_TARGET_PLATFORM%.log libtomcrypt
- if errorlevel 1 call :boot2 libtomcrypt_%FB_OBJ_DIR%
-+:LibTomDone
- goto :EOF
- 
- ::===================
+@@ -212,7 +212,7 @@ goto :EOF
+ 	@call compile.bat extern\libtommath\libtommath_MSVC%MSVC_VERSION% libtommath_%FB_CONFIG%_%FB_TARGET_PLATFORM%.log libtommath
+ 	if errorlevel 1 call :boot2 libtommath_%FB_OBJ_DIR%
+ )
+-@if not defined FBBUILD_WITH_SYSTEM_TOMCRYPT (
++@if not defined FBBUILD_WITH_SYSTEM_TOMCRYPT if not defined FBBUILD_WITHOUT_TOMCRYPT (
+ 	@echo Building LibTomCrypt ^(%FB_OBJ_DIR%^)...
+ 	@call compile.bat extern\libtomcrypt\libtomcrypt_MSVC%MSVC_VERSION% libtomcrypt_%FB_CONFIG%_%FB_TARGET_PLATFORM%.log libtomcrypt
+ 	if errorlevel 1 call :boot2 libtomcrypt_%FB_OBJ_DIR%
 diff --git a/builds/win32/msvc15/Firebird.sln b/builds/win32/msvc15/Firebird.sln
-index 4293fbe7bd..8c7ae357e9 100644
+index 4293fbe..8c7ae35 100644
 --- a/builds/win32/msvc15/Firebird.sln
 +++ b/builds/win32/msvc15/Firebird.sln
 @@ -102,304 +102,468 @@ Global
@@ -1583,16 +1580,18 @@ index 4293fbe7bd..8c7ae357e9 100644
  		HideSolutionNode = FALSE
 diff --git a/builds/win32/msvc15/FirebirdDebugStatic.props b/builds/win32/msvc15/FirebirdDebugStatic.props
 new file mode 100644
-index 0000000000..d1ad61f4d0
+index 0000000..f6bdd26
 --- /dev/null
 +++ b/builds/win32/msvc15/FirebirdDebugStatic.props
-@@ -0,0 +1,18 @@
+@@ -0,0 +1,20 @@
 +﻿<?xml version="1.0" encoding="utf-8"?>
 +<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 +  <PropertyGroup>
 +    <_ProjectFileVersion>10.0.30319.1</_ProjectFileVersion>
 +    <FB_STATIC_PREPROCESSOR_DEFINITIONS>STATIC_CLIENT</FB_STATIC_PREPROCESSOR_DEFINITIONS>
 +    <FB_STATIC_PREPROCESSOR_DEFINITIONS Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">STATIC_CLIENT;WITHOUT_TOMCRYPT</FB_STATIC_PREPROCESSOR_DEFINITIONS>
++    <FbTomMathLib Condition="'$(FBBUILD_WITH_SYSTEM_TOMMATH)'!='1'">../../../extern/libtommath/lib/$(PlatformName)\Debug\tommath.lib</FbTomMathLib>
++    <FbTomCryptLib Condition="'$(FBBUILD_WITH_SYSTEM_TOMCRYPT)'!='1'">../../../extern/libtomcrypt/lib/$(PlatformName)\Debug\tomcrypt.lib</FbTomCryptLib>
 +  </PropertyGroup>
 +  <ItemDefinitionGroup>
 +    <ClCompile>
@@ -1607,16 +1606,18 @@ index 0000000000..d1ad61f4d0
 +</Project>
 diff --git a/builds/win32/msvc15/FirebirdReleaseStatic.props b/builds/win32/msvc15/FirebirdReleaseStatic.props
 new file mode 100644
-index 0000000000..3d29f075dd
+index 0000000..01befa3
 --- /dev/null
 +++ b/builds/win32/msvc15/FirebirdReleaseStatic.props
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,23 @@
 +﻿<?xml version="1.0" encoding="utf-8"?>
 +<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 +  <PropertyGroup>
 +    <_ProjectFileVersion>10.0.30319.1</_ProjectFileVersion>
 +    <FB_STATIC_PREPROCESSOR_DEFINITIONS>STATIC_CLIENT</FB_STATIC_PREPROCESSOR_DEFINITIONS>
 +    <FB_STATIC_PREPROCESSOR_DEFINITIONS Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">STATIC_CLIENT;WITHOUT_TOMCRYPT</FB_STATIC_PREPROCESSOR_DEFINITIONS>
++    <FbTomMathLib Condition="'$(FBBUILD_WITH_SYSTEM_TOMMATH)'!='1'">../../../extern/libtommath/lib/$(PlatformName)\Release\tommath.lib</FbTomMathLib>
++    <FbTomCryptLib Condition="'$(FBBUILD_WITH_SYSTEM_TOMCRYPT)'!='1'">../../../extern/libtomcrypt/lib/$(PlatformName)\Release\tomcrypt.lib</FbTomCryptLib>
 +  </PropertyGroup>
 +  <ItemDefinitionGroup>
 +    <ClCompile>
@@ -1633,7 +1634,7 @@ index 0000000000..3d29f075dd
 +  </ItemDefinitionGroup>
 +</Project>
 diff --git a/builds/win32/msvc15/common.vcxproj b/builds/win32/msvc15/common.vcxproj
-index a9fc6ff024..9574075ed3 100644
+index bae480e..7415921 100644
 --- a/builds/win32/msvc15/common.vcxproj
 +++ b/builds/win32/msvc15/common.vcxproj
 @@ -9,6 +9,14 @@
@@ -1823,7 +1824,7 @@ index a9fc6ff024..9574075ed3 100644
    <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
      <ClCompile>
 @@ -359,6 +449,55 @@
-       <AdditionalDependencies>ws2_32.lib;../../../extern/libtommath/lib/$(PlatformName)\$(Configuration)\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\$(Configuration)\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\$(Configuration)\decnumber.lib;../../../extern/ttmath\$(Configuration)\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
+       <AdditionalDependencies>ws2_32.lib;$(FbTomMathLib);$(FbTomCryptLib);../../../extern/decNumber/lib/$(PlatformName)\$(Configuration)\decnumber.lib;../../../extern/ttmath\$(Configuration)\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
      </Lib>
    </ItemDefinitionGroup>
 +  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'">
@@ -1831,8 +1832,8 @@ index a9fc6ff024..9574075ed3 100644
 +      <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;SUPERSERVER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
 +    </ClCompile>
 +    <Lib>
-+      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'!='1'">../../../extern/libtommath/lib/$(PlatformName)\Release\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\Release\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
-+      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">../../../extern/libtommath/lib/$(PlatformName)\Release\tommath.lib;../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'!='1'">$(FbTomMathLib);$(FbTomCryptLib);../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">$(FbTomMathLib);../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
 +    </Lib>
 +  </ItemDefinitionGroup>
 +  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='DebugStatic|Win32'">
@@ -1844,8 +1845,8 @@ index a9fc6ff024..9574075ed3 100644
 +      <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
 +    </ClCompile>
 +    <Lib>
-+      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'!='1'">../../../extern/libtommath/lib/$(PlatformName)\Debug\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\Debug\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
-+      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">../../../extern/libtommath/lib/$(PlatformName)\Debug\tommath.lib;../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'!='1'">$(FbTomMathLib);$(FbTomCryptLib);../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">$(FbTomMathLib);../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
 +    </Lib>
 +  </ItemDefinitionGroup>
 +  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'">
@@ -1856,8 +1857,8 @@ index a9fc6ff024..9574075ed3 100644
 +      <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;SUPERSERVER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
 +    </ClCompile>
 +    <Lib>
-+      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'!='1'">../../../extern/libtommath/lib/$(PlatformName)\Release\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\Release\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;../../../extern/ttmath\Release\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
-+      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">../../../extern/libtommath/lib/$(PlatformName)\Release\tommath.lib;../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;../../../extern/ttmath\Release\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'!='1'">$(FbTomMathLib);$(FbTomCryptLib);../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;../../../extern/ttmath\Release\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">$(FbTomMathLib);../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;../../../extern/ttmath\Release\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
 +    </Lib>
 +  </ItemDefinitionGroup>
 +  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='DebugStatic|x64'">
@@ -1871,15 +1872,15 @@ index a9fc6ff024..9574075ed3 100644
 +      </PrecompiledHeader>
 +    </ClCompile>
 +    <Lib>
-+      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'!='1'">../../../extern/libtommath/lib/$(PlatformName)\Debug\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\Debug\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;../../../extern/ttmath\Debug\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
-+      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">../../../extern/libtommath/lib/$(PlatformName)\Debug\tommath.lib;../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;../../../extern/ttmath\Debug\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'!='1'">$(FbTomMathLib);$(FbTomCryptLib);../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;../../../extern/ttmath\Debug\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">$(FbTomMathLib);../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;../../../extern/ttmath\Debug\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
 +    </Lib>
 +  </ItemDefinitionGroup>
    <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
    <ImportGroup Label="ExtensionTargets">
    </ImportGroup>
 diff --git a/builds/win32/msvc15/common.vcxproj.filters b/builds/win32/msvc15/common.vcxproj.filters
-index eb80abdaeb..904a547c20 100644
+index eb80abd..904a547 100644
 --- a/builds/win32/msvc15/common.vcxproj.filters
 +++ b/builds/win32/msvc15/common.vcxproj.filters
 @@ -138,6 +138,9 @@
@@ -1903,7 +1904,7 @@ index eb80abdaeb..904a547c20 100644
        <Filter>headers</Filter>
      </ClInclude>
 diff --git a/builds/win32/msvc15/yvalve.vcxproj b/builds/win32/msvc15/yvalve.vcxproj
-index a9103faa25..4aab9172b9 100644
+index a9103fa..4aab917 100644
 --- a/builds/win32/msvc15/yvalve.vcxproj
 +++ b/builds/win32/msvc15/yvalve.vcxproj
 @@ -9,6 +9,14 @@
@@ -2175,7 +2176,7 @@ index a9103faa25..4aab9172b9 100644
 \ No newline at end of file
 +</Project>
 diff --git a/builds/win32/msvc15/yvalve.vcxproj.filters b/builds/win32/msvc15/yvalve.vcxproj.filters
-index 09ca441a43..77c729c067 100644
+index 09ca441..77c729c 100644
 --- a/builds/win32/msvc15/yvalve.vcxproj.filters
 +++ b/builds/win32/msvc15/yvalve.vcxproj.filters
 @@ -78,6 +78,9 @@
@@ -2199,20 +2200,20 @@ index 09ca441a43..77c729c067 100644
        <Filter>headers</Filter>
      </ClInclude>
 diff --git a/builds/win32/run_all.bat b/builds/win32/run_all.bat
-index d59910aef9..c70228365b 100644
+index e2660a9..1481d33 100644
 --- a/builds/win32/run_all.bat
 +++ b/builds/win32/run_all.bat
-@@ -11,6 +11,7 @@ set FBBUILD_MAKE_KITS_ONLY=
- set FBBUILD_BUILD_ONLY=0
- set FBBUILD_KITS=ISX ZIP
- set FBBUILD_TEST_ONLY=
+@@ -17,6 +17,7 @@ set FBBUILD_WITH_SYSTEM_TOMMATH=
+ set FBBUILD_WITH_SYSTEM_TOMCRYPT=
+ set FBBUILD_WITH_SYSTEM_ZLIB=
+ set FBBUILD_WITH_SYSTEM_ICU=
 +set FBBUILD_WITHOUT_TOMCRYPT=
  set FB2_SNAPSHOT=
  
  ::Check if on-line help is required
-@@ -81,6 +82,8 @@ goto :END
- @echo.
- @echo    NOCLEAN   - don't run CLEAN_ALL.BAT
+@@ -104,6 +105,8 @@ goto :END
+ @echo    WITH_SYSTEM_ICU - use ICU headers from the system include path and do not
+ @echo                      distribute ICU libraries and icudt (instead of extern\icu)
  @echo.
 +@echo    WITHOUT_TOMCRYPT - omit TomCrypt and ChaCha from CLIENT_ONLY=STATIC builds
 +@echo.
@@ -2220,15 +2221,21 @@ index d59910aef9..c70228365b 100644
  @echo                This will do a deeper clean.
  @echo                Recommended for multi-platform builds
 diff --git a/builds/win32/setenvvar.bat b/builds/win32/setenvvar.bat
-index 6e78fd0c17..b9e0751b82 100644
+index 2003dbd..bb27e2d 100644
 --- a/builds/win32/setenvvar.bat
 +++ b/builds/win32/setenvvar.bat
-@@ -11,13 +11,87 @@
+@@ -11,19 +11,117 @@
  
  set FB_CLEAN=
  
 -for %%v in ( %* )  do (
 -  ( if /I "%%v"=="DEBUG" ( (set FB_DBG=TRUE) && (set FB_CONFIG=debug) ) )
+-  ( if /I "%%v"=="WITHOUT_CLOOP_GENERATION" (set FBBUILD_WITHOUT_CLOOP_GENERATION=1) )
+-  ( if /I "%%v"=="WITH_SYSTEM_BOOST" (set FBBUILD_WITH_SYSTEM_BOOST=1) )
+-  ( if /I "%%v"=="WITH_SYSTEM_TOMMATH" (set FBBUILD_WITH_SYSTEM_TOMMATH=1) )
+-  ( if /I "%%v"=="WITH_SYSTEM_TOMCRYPT" (set FBBUILD_WITH_SYSTEM_TOMCRYPT=1) )
+-  ( if /I "%%v"=="WITH_SYSTEM_ZLIB" (set FBBUILD_WITH_SYSTEM_ZLIB=1) )
+-  ( if /I "%%v"=="WITH_SYSTEM_ICU" (set FBBUILD_WITH_SYSTEM_ICU=1) )
 -  ( if /I "%%v"=="CLEAN" (set FB_CLEAN=:rebuild) )
 -  ( if /I "%%v"=="RELEASE" ( (set FB_DBG=) && (set FB_CONFIG=release) ) )
 -  ( if /I "%%v"=="CLIENT_ONLY" (set FB_CLIENT_ONLY=TRUE) )
@@ -2248,6 +2255,36 @@ index 6e78fd0c17..b9e0751b82 100644
 +  shift /1
 +  goto :parse_args
  )
++if /I "%~1"=="WITHOUT_CLOOP_GENERATION" (
++  set FBBUILD_WITHOUT_CLOOP_GENERATION=1
++  shift /1
++  goto :parse_args
++)
++if /I "%~1"=="WITH_SYSTEM_BOOST" (
++  set FBBUILD_WITH_SYSTEM_BOOST=1
++  shift /1
++  goto :parse_args
++)
++if /I "%~1"=="WITH_SYSTEM_TOMMATH" (
++  set FBBUILD_WITH_SYSTEM_TOMMATH=1
++  shift /1
++  goto :parse_args
++)
++if /I "%~1"=="WITH_SYSTEM_TOMCRYPT" (
++  set FBBUILD_WITH_SYSTEM_TOMCRYPT=1
++  shift /1
++  goto :parse_args
++)
++if /I "%~1"=="WITH_SYSTEM_ZLIB" (
++  set FBBUILD_WITH_SYSTEM_ZLIB=1
++  shift /1
++  goto :parse_args
++)
++if /I "%~1"=="WITH_SYSTEM_ICU" (
++  set FBBUILD_WITH_SYSTEM_ICU=1
++  shift /1
++  goto :parse_args
++)
 +if /I "%~1"=="WITHOUT_TOMCRYPT" (
 +  set FBBUILD_WITHOUT_TOMCRYPT=1
 +  shift /1
@@ -2317,7 +2354,7 @@ index 6e78fd0c17..b9e0751b82 100644
  
  @if not defined FB_CONFIG (
    set FB_DBG=
-@@ -131,10 +205,10 @@ rem NOTE 2 This code is likely to break again in the future !!!!
+@@ -137,10 +235,10 @@ rem NOTE 2 This code is likely to break again in the future !!!!
    @setlocal EnableDelayedExpansion
  
    if not exist "!VCToolsRedistDir!!VSCMD_ARG_TGT_ARCH!\Microsoft.VC!MSVC_RUNTIME_MAJOR_VERSION!!MSVC_RUNTIME_MINOR_VERSION!.CRT" (
@@ -2330,7 +2367,7 @@ index 6e78fd0c17..b9e0751b82 100644
    )
    set MSVC_RUNTIME_LIBRARY_VERSION=%MSVC_RUNTIME_MAJOR_VERSION%%MSVC_RUNTIME_MINOR_VERSION%
  
-@@ -168,6 +242,17 @@ rem NOTE 2 This code is likely to break again in the future !!!!
+@@ -174,6 +272,17 @@ rem NOTE 2 This code is likely to break again in the future !!!!
  @set FIREBIRD_BOOT_BUILD=1
  
  @set FB_OBJ_DIR=%FB_TARGET_PLATFORM%\%FB_CONFIG%
@@ -2348,10 +2385,10 @@ index 6e78fd0c17..b9e0751b82 100644
  @set FB_BIN_DIR=%FB_ROOT_PATH%\temp\%FB_OBJ_DIR%\firebird
  
  
-@@ -203,6 +288,10 @@ goto :END
- @echo    vs_ver=%VS_VER%
- @echo    FB_VSCOMNTOOLS=%FB_VSCOMNTOOLS%
- @echo    platform=%FB_TARGET_PLATFORM%
+@@ -215,6 +324,10 @@ goto :END
+ @if defined FBBUILD_WITH_SYSTEM_TOMCRYPT echo    with_system_tomcrypt=yes
+ @if defined FBBUILD_WITH_SYSTEM_ZLIB echo    with_system_zlib=yes
+ @if defined FBBUILD_WITH_SYSTEM_ICU echo    with_system_icu=yes
 +@if /I "%FB_CLIENT_ONLY%"=="STATIC" (
 +  @echo    fbclient_static_config=%FB_STATIC_CONFIG%
 +  @if defined FBBUILD_WITHOUT_TOMCRYPT echo    without_tomcrypt=yes
@@ -2360,10 +2397,10 @@ index 6e78fd0c17..b9e0751b82 100644
  @echo    db_path=%FB_DB_PATH%
  @echo    root_path=%FB_ROOT_PATH%
 diff --git a/configure.ac b/configure.ac
-index 32adf0ac86..6581616bac 100644
+index 7a1a7e0..1fca7d9 100644
 --- a/configure.ac
 +++ b/configure.ac
-@@ -896,6 +896,7 @@ AC_CHECK_TOOL([OBJCOPY], [objcopy])
+@@ -906,6 +906,7 @@ AC_CHECK_TOOL([OBJCOPY], [objcopy])
  AC_CHECK_TOOL([OBJDUMP], [objdump])
  AC_CHECK_TOOL([RANLIB], [ranlib])
  AC_CHECK_TOOL([READELF], [readelf])
@@ -2371,7 +2408,7 @@ index 32adf0ac86..6581616bac 100644
  LT_INIT([dlopen win32-dll])
  
  dnl Check for system header files
-@@ -1013,6 +1014,9 @@ else
+@@ -1025,6 +1026,9 @@ else
  		XE_RESTORE_ENV()
  	fi
  fi
@@ -2381,7 +2418,7 @@ index 32adf0ac86..6581616bac 100644
  AC_SUBST(CRYPTLIB)
  
  dnl Check for termcap support
-@@ -1521,6 +1525,7 @@ fi
+@@ -1533,6 +1537,7 @@ fi
  
  AC_CONFIG_FILES([
  gen/vers.sh:builds/posix/vers.sh.in
@@ -2391,7 +2428,7 @@ index 32adf0ac86..6581616bac 100644
  dnl: Platform Specific Files
 diff --git a/doc/README.StaticClient.md b/doc/README.StaticClient.md
 new file mode 100644
-index 0000000000..af1f1cfa17
+index 0000000..af1f1cf
 --- /dev/null
 +++ b/doc/README.StaticClient.md
 @@ -0,0 +1,196 @@
@@ -2592,7 +2629,7 @@ index 0000000000..af1f1cfa17
 +fires on thread exit for any thread that touched the slot, regardless of whether the code is in a DLL or linked directly
 +into the host application, mirroring what `pthread_key_create`'s destructor already gives the POSIX build for free.
 diff --git a/src/common/classes/Hash.h b/src/common/classes/Hash.h
-index fe7b3cc9d3..293abc7595 100644
+index fe7b3cc..293abc7 100644
 --- a/src/common/classes/Hash.h
 +++ b/src/common/classes/Hash.h
 @@ -365,6 +365,7 @@ namespace Firebird
@@ -2613,7 +2650,7 @@ index fe7b3cc9d3..293abc7595 100644
  
 diff --git a/src/common/classes/ThreadCleanup.cpp b/src/common/classes/ThreadCleanup.cpp
 new file mode 100644
-index 0000000000..2baa48d903
+index 0000000..2baa48d
 --- /dev/null
 +++ b/src/common/classes/ThreadCleanup.cpp
 @@ -0,0 +1,115 @@
@@ -2734,7 +2771,7 @@ index 0000000000..2baa48d903
 +} // namespace Firebird
 diff --git a/src/common/classes/ThreadCleanup.h b/src/common/classes/ThreadCleanup.h
 new file mode 100644
-index 0000000000..70524db8d5
+index 0000000..70524db
 --- /dev/null
 +++ b/src/common/classes/ThreadCleanup.h
 @@ -0,0 +1,79 @@
@@ -2818,7 +2855,7 @@ index 0000000000..70524db8d5
 +
 +#endif // CLASSES_THREAD_CLEANUP_H
 diff --git a/src/common/classes/TomCryptHash.cpp b/src/common/classes/TomCryptHash.cpp
-index 1816cc0d52..a4ef0d374f 100644
+index 1816cc0..a4ef0d3 100644
 --- a/src/common/classes/TomCryptHash.cpp
 +++ b/src/common/classes/TomCryptHash.cpp
 @@ -23,6 +23,9 @@
@@ -2837,7 +2874,7 @@ index 1816cc0d52..a4ef0d374f 100644
  
 +#endif // HAVE_TOMCRYPT && !WITHOUT_TOMCRYPT
 diff --git a/src/common/classes/alloc.cpp b/src/common/classes/alloc.cpp
-index 5c897f9fbd..102d211dc7 100644
+index 5c897f9..102d211 100644
 --- a/src/common/classes/alloc.cpp
 +++ b/src/common/classes/alloc.cpp
 @@ -3126,3 +3126,15 @@ void operator delete[](void* mem) noexcept
@@ -2857,7 +2894,7 @@ index 5c897f9fbd..102d211dc7 100644
 +}
 +#endif
 diff --git a/src/common/classes/alloc.h b/src/common/classes/alloc.h
-index 40de23c4da..46521b11e2 100644
+index 40de23c..46521b1 100644
 --- a/src/common/classes/alloc.h
 +++ b/src/common/classes/alloc.h
 @@ -378,7 +378,6 @@ inline void operator delete[](void* mem, Firebird::MemoryPool& pool ALLOC_PARAMS
@@ -2886,7 +2923,7 @@ index 40de23c4da..46521b11e2 100644
  
  namespace Firebird
 diff --git a/src/common/classes/init.h b/src/common/classes/init.h
-index 7b26f63150..e5555a705e 100644
+index 7b26f63..e5555a7 100644
 --- a/src/common/classes/init.h
 +++ b/src/common/classes/init.h
 @@ -147,6 +147,13 @@ public:
@@ -2904,7 +2941,7 @@ index 7b26f63150..e5555a705e 100644
  	{
  		return instance;
 diff --git a/src/common/os/win32/mod_loader.cpp b/src/common/os/win32/mod_loader.cpp
-index c4418feceb..5860a6723f 100644
+index c4418fe..5860a67 100644
 --- a/src/common/os/win32/mod_loader.cpp
 +++ b/src/common/os/win32/mod_loader.cpp
 @@ -60,6 +60,24 @@ private:
@@ -2942,7 +2979,7 @@ index c4418feceb..5860a6723f 100644
  		if (actCtx.hModule)
  		{
 diff --git a/src/include/cross/android.arm64 b/src/include/cross/android.arm64
-index 19e4676c01..187238f7cf 100644
+index 19e4676..187238f 100644
 --- a/src/include/cross/android.arm64
 +++ b/src/include/cross/android.arm64
 @@ -22,6 +22,9 @@
@@ -2956,7 +2993,7 @@ index 19e4676c01..187238f7cf 100644
  #define FB_ALIGNMENT 8
  
 diff --git a/src/include/cross/android.arme b/src/include/cross/android.arme
-index 42ba40771e..2683086651 100644
+index 42ba407..2683086 100644
 --- a/src/include/cross/android.arme
 +++ b/src/include/cross/android.arme
 @@ -28,6 +28,9 @@
@@ -2970,7 +3007,7 @@ index 42ba40771e..2683086651 100644
  #define FB_ALIGNMENT 8
  
 diff --git a/src/include/cross/android.x86 b/src/include/cross/android.x86
-index 431f199f31..9d8612bdeb 100644
+index 431f199..9d8612b 100644
 --- a/src/include/cross/android.x86
 +++ b/src/include/cross/android.x86
 @@ -22,6 +22,9 @@
@@ -2984,7 +3021,7 @@ index 431f199f31..9d8612bdeb 100644
  #define FB_ALIGNMENT 8
  
 diff --git a/src/include/cross/android.x86_64 b/src/include/cross/android.x86_64
-index 7275c05444..7dc86535da 100644
+index 7275c05..7dc8653 100644
 --- a/src/include/cross/android.x86_64
 +++ b/src/include/cross/android.x86_64
 @@ -22,6 +22,9 @@
@@ -2998,7 +3035,7 @@ index 7275c05444..7dc86535da 100644
  #define FB_ALIGNMENT 8
  
 diff --git a/src/include/gen/autoconfig.h.in b/src/include/gen/autoconfig.h.in
-index 709c100c8a..78a8294e50 100644
+index 709c100..78a8294 100644
 --- a/src/include/gen/autoconfig.h.in
 +++ b/src/include/gen/autoconfig.h.in
 @@ -378,6 +378,9 @@
@@ -3012,7 +3049,7 @@ index 709c100c8a..78a8294e50 100644
  /******************************************************************************
   *
 diff --git a/src/include/gen/autoconfig_msvc.h b/src/include/gen/autoconfig_msvc.h
-index 1e25478c64..c969ad9271 100644
+index 1e25478..c969ad9 100644
 --- a/src/include/gen/autoconfig_msvc.h
 +++ b/src/include/gen/autoconfig_msvc.h
 @@ -157,6 +157,7 @@
@@ -3024,7 +3061,7 @@ index 1e25478c64..c969ad9271 100644
  /* Functions */
  #undef HAVE_GETTIMEOFDAY
 diff --git a/src/jrd/os/win32/ibinitdll.cpp b/src/jrd/os/win32/ibinitdll.cpp
-index 7ea8106e93..b048a512bb 100644
+index 7ea8106..b048a51 100644
 --- a/src/jrd/os/win32/ibinitdll.cpp
 +++ b/src/jrd/os/win32/ibinitdll.cpp
 @@ -25,12 +25,19 @@
@@ -3062,7 +3099,7 @@ index 7ea8106e93..b048a512bb 100644
  			bDllProcessExiting = (reserved != NULL);
  			dDllUnloadTID = GetCurrentThreadId();
 diff --git a/src/plugins/crypt/chacha/ChaCha.cpp b/src/plugins/crypt/chacha/ChaCha.cpp
-index 02cb9c76f7..d474c974b0 100644
+index 02cb9c7..d474c97 100644
 --- a/src/plugins/crypt/chacha/ChaCha.cpp
 +++ b/src/plugins/crypt/chacha/ChaCha.cpp
 @@ -28,6 +28,7 @@
@@ -3098,7 +3135,7 @@ index 02cb9c76f7..d474c974b0 100644
 +#endif
 diff --git a/src/plugins/crypt/chacha/ChaCha.h b/src/plugins/crypt/chacha/ChaCha.h
 new file mode 100644
-index 0000000000..367160ac19
+index 0000000..367160a
 --- /dev/null
 +++ b/src/plugins/crypt/chacha/ChaCha.h
 @@ -0,0 +1,37 @@
@@ -3140,7 +3177,7 @@ index 0000000000..367160ac19
 +
 +#endif // CRYPT_CHACHA_H
 diff --git a/src/remote/client/interface.cpp b/src/remote/client/interface.cpp
-index e9bdd12d60..99952f248b 100644
+index e9bdd12..99952f2 100644
 --- a/src/remote/client/interface.cpp
 +++ b/src/remote/client/interface.cpp
 @@ -72,6 +72,9 @@
@@ -3164,7 +3201,7 @@ index e9bdd12d60..99952f248b 100644
  
  } // namespace Remote
 diff --git a/src/yvalve/MasterImplementation.cpp b/src/yvalve/MasterImplementation.cpp
-index d8ec299dbc..f23066bdc8 100644
+index d8ec299..f23066b 100644
 --- a/src/yvalve/MasterImplementation.cpp
 +++ b/src/yvalve/MasterImplementation.cpp
 @@ -251,10 +251,20 @@ THREAD_ENTRY_DECLARE TimerEntry::timeThread(THREAD_ENTRY_PARAM)
@@ -3218,7 +3255,7 @@ index d8ec299dbc..f23066bdc8 100644
  
  	return 0;
 diff --git a/src/yvalve/utl.cpp b/src/yvalve/utl.cpp
-index 00985d616b..3d9f607345 100644
+index 00985d6..3d9f607 100644
 --- a/src/yvalve/utl.cpp
 +++ b/src/yvalve/utl.cpp
 @@ -70,6 +70,7 @@
@@ -3337,7 +3374,7 @@ index 00985d616b..3d9f607345 100644
 -}
 -#endif
 diff --git a/src/yvalve/utl_proto.h b/src/yvalve/utl_proto.h
-index 900e5df882..cc25c2cc5f 100644
+index 900e5df..cc25c2c 100644
 --- a/src/yvalve/utl_proto.h
 +++ b/src/yvalve/utl_proto.h
 @@ -87,9 +87,4 @@ void makePermanentVector(ISC_STATUS* v) throw();

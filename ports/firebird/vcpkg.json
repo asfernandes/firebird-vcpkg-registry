@@ -1,30 +1,35 @@
 {
   "name": "firebird",
-  "version-semver": "5.0.4",
-  "port-version": 6,
+  "version-semver": "5.0.5",
   "description": "Firebird SQL DBMS client library",
   "homepage": "https://firebirdsql.org/",
   "license": "LicenseRef-IDPL OR LicenseRef-IPL",
-  "supports": "(windows & !uwp) | linux | osx",
+  "supports": "(windows & !uwp & !arm) | linux | osx",
   "dependencies": [
+    "boost-preprocessor",
     {
       "name": "icu",
       "host": true,
       "default-features": false
     },
     {
-      "name": "libtommath",
-      "platform": "!windows | (windows & static)"
+      "name": "libtomcrypt",
+      "platform": "windows & !static"
     },
+    "libtommath",
     {
       "name": "ncurses",
       "host": true,
       "platform": "!windows"
     },
     {
+      "name": "re2",
+      "host": true
+    },
+    {
       "name": "zlib",
       "host": true,
-      "platform": "linux"
+      "platform": "linux | windows"
     }
   ],
   "features": {

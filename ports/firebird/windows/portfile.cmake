@@ -18,12 +18,35 @@ else()
     set(FB_BUILD_ARGS CLIENT_ONLY)
 endif()
 
+list(APPEND FB_BUILD_ARGS
+    WITHOUT_CLOOP_GENERATION
+    WITH_SYSTEM_BOOST
+    WITH_SYSTEM_TOMMATH
+    WITH_SYSTEM_TOMCRYPT
+    WITH_SYSTEM_ZLIB
+    WITH_SYSTEM_ICU
+)
+
+# Make headers and libraries from vcpkg visible to the compiler and linker.
+file(TO_NATIVE_PATH "${CURRENT_INSTALLED_DIR}/include" FB_VCPKG_INCLUDE_DIR)
+file(TO_NATIVE_PATH "${CURRENT_HOST_INSTALLED_DIR}/include" FB_VCPKG_HOST_INCLUDE_DIR)
+set(ENV{INCLUDE} "${FB_VCPKG_INCLUDE_DIR};${FB_VCPKG_HOST_INCLUDE_DIR};$ENV{INCLUDE}")
+
+file(TO_NATIVE_PATH "${CURRENT_INSTALLED_DIR}/lib" FB_VCPKG_LIB_DIR)
+file(TO_NATIVE_PATH "${CURRENT_INSTALLED_DIR}/debug/lib" FB_VCPKG_DEBUG_LIB_DIR)
+set(FB_ORIGINAL_LIB "$ENV{LIB}")
+
+# MSBuild ignores INCLUDE and LIB unless UseEnv is true (read as a property from the environment).
+set(ENV{UseEnv} true)
+
 if(NOT "chacha" IN_LIST FEATURES)
     list(APPEND FB_BUILD_ARGS WITHOUT_TOMCRYPT)
 endif()
 
 
 # Release build
+
+set(ENV{LIB} "${FB_VCPKG_LIB_DIR};${FB_ORIGINAL_LIB}")
 
 vcpkg_execute_build_process(
     COMMAND ${CMAKE_COMMAND} -E env
@@ -83,6 +106,8 @@ file(
 
 
 # Debug build
+
+set(ENV{LIB} "${FB_VCPKG_DEBUG_LIB_DIR};${FB_ORIGINAL_LIB}")
 
 vcpkg_execute_build_process(
     COMMAND ${CMAKE_COMMAND} -E env
