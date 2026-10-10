@@ -15,6 +15,7 @@ vcpkg_from_github(
         tomcrypt-link.patch
         osx-icu-rpath.patch
         osx-unvcpkg.patch
+        without-cloop-generation.patch
 )
 
 if(VCPKG_TARGET_IS_WINDOWS)

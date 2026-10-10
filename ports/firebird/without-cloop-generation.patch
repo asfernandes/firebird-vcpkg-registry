@@ -1,0 +1,206 @@
+diff --git a/builds/posix/Makefile.in b/builds/posix/Makefile.in
+index 61c5a0e..da164d1 100644
+--- a/builds/posix/Makefile.in
++++ b/builds/posix/Makefile.in
+@@ -133,6 +133,7 @@ RPL_AWK_SRC=$(MISC)/def_awk.c
+ RPL_GREP=$(GEN_ROOT)/isc_grep
+ RPL_GREP_SRC=$(MISC)/isc_grep.c
+ 
++ifeq ($(CLOOP_GENERATION_FLG),Y)
+ updateCloopInterfaces : $(API_H_FILE) $(API_PAS_FILE) $(API_C_H_FILE)
+ 
+ $(API_H_FILE): $(IDL_FILE)
+@@ -178,6 +179,7 @@ $(API_PAS_FILE): $(IDL_FILE) $(PASCAL_SOURCES) $(TMP_FUNCS_PAS)
+     	--exceptionClass FbException \
+     	--functionsFile $(TMP_FUNCS_PAS) \
+     	--prefix I
++endif
+ 
+ updateBuildNum : $(SRC_ROOT)/jrd/build_no.h $(GEN_ROOT)/Make.Version
+ 
+@@ -197,7 +199,9 @@ ifeq ($(CLIENT_ONLY_FLG),N)
+ 	CC="$(CC)" CFLAGS="$(CFLAGS)" AR="$(AR)" $(MAKE) -C $(ROOT)/extern/btyacc
+ endif
+ 
++ifeq ($(CLOOP_GENERATION_FLG),Y)
+ 	CXX="$(CXX)" $(MAKE) -C $(ROOT)/extern/cloop TARGET=release WITH_FPC=0 BUILD_DIR=$(TMP_ROOT)/cloop OUT_DIR=$(GEN_ROOT)/$(TARGET)/cloop core
++endif
+ 
+ 	CC="$(CC)" CFLAGS="$(CFLAGS)" AR="$(AR)" $(MAKE) -C $(ROOT)/extern/decNumber
+ 	ln -sf $(ROOT)/extern/decNumber/libdecFloat.a $(STATIC_LIB)
+@@ -335,7 +339,9 @@ master_process:
+ 	$(MAKE) updateBuildNum
+ 	$(MAKE) export_lists
+ 	$(MAKE) external
++ifeq ($(CLOOP_GENERATION_FLG),Y)
+ 	$(MAKE) updateCloopInterfaces
++endif
+ 	$(MAKE) rest
+ 	$(MAKE) yvalve
+ ifeq ($(CLIENT_ONLY_FLG),Y)
+@@ -370,7 +376,9 @@ cross1:
+ 	$(MAKE) updateBuildNum
+ 	$(MAKE) export_lists
+ 	$(MAKE) external
++ifeq ($(CLOOP_GENERATION_FLG),Y)
+ 	$(MAKE) updateCloopInterfaces
++endif
+ ifeq ($(CLIENT_ONLY_FLG),N)
+ 	$(MAKE) boot
+ 	$(MAKE) yvalve
+@@ -887,7 +895,9 @@ clean_vers:
+ clean_misc:
+ 	$(RM) security.tmp test.header.txt
+ 	$(RM) $(TMP_FUNCS_PAS) $(RPL_AWK) $(RPL_GREP)
++ifeq ($(CLOOP_GENERATION_FLG),Y)
+ 	$(TOUCH) -c -t 200001010000 $(API_H_FILE) $(API_PAS_FILE)
++endif
+ 
+ 
+ ifeq ($(EDITLINE_FLG),Y)
+diff --git a/builds/posix/make.defaults b/builds/posix/make.defaults
+index 366b1a4..8f958d1 100755
+--- a/builds/posix/make.defaults
++++ b/builds/posix/make.defaults
+@@ -49,6 +49,7 @@ EXA_ROOT=$(ROOT)/examples
+ IsCross=@IS_CROSS@
+ TOMMATH_BUILD_FLG=@TOMMATH_BUILD@
+ TOMCRYPT_BUILD_FLG=@TOMCRYPT_BUILD@
++CLOOP_GENERATION_FLG=@CLOOP_GENERATION@
+ RE2_BUILD_FLG=@RE2_BUILD@
+ SYSTEM_BOOST_FLG=@SYSTEM_BOOST@
+ 
+diff --git a/builds/win32/make_boot.bat b/builds/win32/make_boot.bat
+index bc4e2f1..3d7bccf 100644
+--- a/builds/win32/make_boot.bat
++++ b/builds/win32/make_boot.bat
+@@ -29,7 +29,7 @@ for %%v in ( alice auth burp dsql gpre isql jrd misc msgs examples yvalve utilit
+ 
+ @mkdir %FB_BIN_DIR%\tzdata 2>nul
+ 
+-call :interfaces
++@if not defined FBBUILD_WITHOUT_CLOOP_GENERATION call :interfaces
+ if "!ERRLEV!"=="1" goto :END
+ 
+ call :LibTom
+@@ -202,6 +202,7 @@ goto :EOF
+ ::===================
+ :: Build CLOOP and generate interface headers
+ :interfaces
++@if defined FBBUILD_WITHOUT_CLOOP_GENERATION goto :EOF
+ @echo.
+ @echo Building CLOOP and generating interfaces...
+ @nmake /s /x interfaces_%FB_TARGET_PLATFORM%.log /f gen_helper.nmake updateCloopInterfaces
+diff --git a/builds/win32/run_all.bat b/builds/win32/run_all.bat
+index c702283..5805fc0 100644
+--- a/builds/win32/run_all.bat
++++ b/builds/win32/run_all.bat
+@@ -12,6 +12,7 @@ set FBBUILD_BUILD_ONLY=0
+ set FBBUILD_KITS=ISX ZIP
+ set FBBUILD_TEST_ONLY=
+ set FBBUILD_WITHOUT_TOMCRYPT=
++set FBBUILD_WITHOUT_CLOOP_GENERATION=
+ set FB2_SNAPSHOT=
+ 
+ ::Check if on-line help is required
+@@ -84,6 +85,8 @@ goto :END
+ @echo.
+ @echo    WITHOUT_TOMCRYPT - omit TomCrypt and ChaCha from CLIENT_ONLY=STATIC builds
+ @echo.
++@echo    WITHOUT_CLOOP_GENERATION - omit Cloop build and interface generation
++@echo.
+ @echo    REALCLEAN - Run CLEAN_ALL.BAT REALCLEAN
+ @echo                This will do a deeper clean.
+ @echo                Recommended for multi-platform builds
+diff --git a/builds/win32/setenvvar.bat b/builds/win32/setenvvar.bat
+index b9e0751..9ba9510 100644
+--- a/builds/win32/setenvvar.bat
++++ b/builds/win32/setenvvar.bat
+@@ -26,6 +26,11 @@ if /I "%~1"=="DEBUG" (
+   shift /1
+   goto :parse_args
+ )
++if /I "%~1"=="WITHOUT_CLOOP_GENERATION" (
++  set FBBUILD_WITHOUT_CLOOP_GENERATION=1
++  shift /1
++  goto :parse_args
++)
+ if /I "%~1"=="WITHOUT_TOMCRYPT" (
+   set FBBUILD_WITHOUT_TOMCRYPT=1
+   shift /1
+@@ -288,6 +293,7 @@ goto :END
+ @echo    vs_ver=%VS_VER%
+ @echo    FB_VSCOMNTOOLS=%FB_VSCOMNTOOLS%
+ @echo    platform=%FB_TARGET_PLATFORM%
++@if defined FBBUILD_WITHOUT_CLOOP_GENERATION echo    without_cloop_generation=yes
+ @if /I "%FB_CLIENT_ONLY%"=="STATIC" (
+   @echo    fbclient_static_config=%FB_STATIC_CONFIG%
+   @if defined FBBUILD_WITHOUT_TOMCRYPT echo    without_tomcrypt=yes
+diff --git a/configure.ac b/configure.ac
+index 8c5ea3a..3a872dd 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -640,6 +640,16 @@ AC_ARG_WITH(tomcrypt,
+    esac])
+ AC_SUBST(WITH_TOMCRYPT)
+ 
++CLOOP_GENERATION=Y
++AC_ARG_WITH(cloop-generation,
++  [  --without-cloop-generation do not build cloop or update generated interface files (default=no)],
++  [case "$withval" in
++     yes) CLOOP_GENERATION=Y;;
++     no)  CLOOP_GENERATION=N;;
++     *)   AC_MSG_ERROR(bad value '${withval}' for --with-cloop-generation);;
++   esac])
++AC_SUBST(CLOOP_GENERATION)
++
+ TOMCRYPT_BUILD=N
+ AC_ARG_WITH(builtin-tomcrypt,
+   [  --with-builtin-tomcrypt build libtomcrypt library from firebird tree],
+@@ -1650,6 +1660,12 @@ echo           "                   Service name : $FB_SERVICE_NAME"
+ echo           "                   Service port : $FB_SERVICE_PORT"
+ 
+ echo           "                   GPRE modules : c_cxx.cpp$GPRE_LANGUAGE_MODULES"
++
++case $CLOOP_GENERATION in
++ Y)       echo "               Cloop generation : enabled";;
++ N)       echo "               Cloop generation : disabled";;
++esac
++
+ echo
+ 
+ echo           "                    Install Dir : $prefix"
+diff --git a/doc/README.build.msvc.html b/doc/README.build.msvc.html
+index 55122d8..478421a 100644
+--- a/doc/README.build.msvc.html
++++ b/doc/README.build.msvc.html
+@@ -108,6 +108,7 @@ with the default options (next, next, next)</li>
+ <li>make_boot.bat [DEBUG] [CLEAN]</li>
+ <li>make_all.bat [DEBUG] [CLEAN]</li>
+ </ol>
++<li>To skip the Cloop build and generated interface updates, pass <code>WITHOUT_CLOOP_GENERATION</code> to <code>run_all.bat</code>.</li>
+ </ol>
+ <ul>
+ <p>After the build finish, an output directory with the binaries is created below your firebird directory.</p>
+diff --git a/doc/README.build.posix.html b/doc/README.build.posix.html
+index 8a05ebd..a0998e8 100644
+--- a/doc/README.build.posix.html
++++ b/doc/README.build.posix.html
+@@ -376,6 +376,17 @@ td.right    {
+                     no
+                 </td>
+             </tr>
++            <tr>
++                <td class="code">
++                    --without-cloop-generation
++                </td>
++                <td>
++                    Do not build Cloop or update generated interface files
++                </td>
++                <td class="code">
++                    no
++                </td>
++            </tr>
+             <tr>
+                 <td class="code">
+                     --enable-raw-devices

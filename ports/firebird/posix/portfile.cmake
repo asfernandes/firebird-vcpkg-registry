@@ -14,6 +14,7 @@ endif()
 set(FIREBIRD_CONFIGURE_OPTIONS
     --enable-client-only
     --enable-binreloc
+    --without-cloop-generation
     --with-termlib=:libncurses.a
     --with-atomiclib=:libatomic.a
     --with-fbplugins=plugins/${PORT}
