@@ -1,6 +1,14 @@
 #include <array>
+#include "firebird/Interface.h"
+#include "firebird/Message.h"
 #include "firebird/ibase.h"
 #include <iostream>
+
+
+FB_MESSAGE(TestMessage, ::Firebird::ThrowStatusWrapper,
+	(FB_INTEGER, id)
+	(FB_VARCHAR(30), name)
+);
 
 
 int main()
