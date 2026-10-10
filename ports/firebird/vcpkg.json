@@ -7,6 +7,7 @@
   "license": "LicenseRef-IDPL OR LicenseRef-IPL",
   "supports": "(windows & !uwp) | linux | osx",
   "dependencies": [
+    "boost-preprocessor",
     {
       "name": "icu",
       "host": true,

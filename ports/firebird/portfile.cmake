@@ -16,6 +16,8 @@ vcpkg_from_github(
         osx-icu-rpath.patch
         osx-unvcpkg.patch
         without-cloop-generation.patch
+        system-boost-posix.patch
+        system-boost-windows.patch
 )
 
 if(VCPKG_TARGET_IS_WINDOWS)
