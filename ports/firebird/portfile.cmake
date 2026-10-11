@@ -19,6 +19,7 @@ vcpkg_from_github(
         system-boost-posix.patch
         system-boost-windows.patch
         system-libs-windows.patch
+        re2-string-view.patch
 )
 
 # Only decNumber, ttmath and ICU's tzdata are used from the bundled third-party sources.
