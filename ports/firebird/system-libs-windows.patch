@@ -1,0 +1,401 @@
+diff --git a/builds/win32/make_all.bat b/builds/win32/make_all.bat
+index 9d7553c..d3ecfeb 100644
+--- a/builds/win32/make_all.bat
++++ b/builds/win32/make_all.bat
+@@ -119,7 +119,7 @@ copy %FB_GEN_DIR%\iberror_c.h %FB_OUTPUT_DIR%\include\firebird\impl > nul
+ xcopy /y %FB_ROOT_PATH%\src\include\firebird %FB_OUTPUT_DIR%\include\firebird /e > nul
+ 
+ :: With system boost, do not distribute the embedded copy and make Message.h use <boost/...> and BOOST_PP_
+-@if exist %FB_TEMP_DIR%\FirebirdSystemBoost.props (
++@if exist %FB_TEMP_DIR%\FirebirdSystemLibs.props (
+ 	rmdir /S /Q %FB_OUTPUT_DIR%\include\firebird\impl\boost 2>nul
+ 	powershell -NoProfile -Command "(Get-Content '%FB_ROOT_PATH%\src\include\firebird\Message.h') -replace '^#include \"\./impl/boost/(.+)\"', '#include <boost/$1>' -replace '\bFB_BOOST_PP_', 'BOOST_PP_' | Set-Content -Encoding ascii '%FB_OUTPUT_DIR%\include\firebird\Message.h'"
+ )
+diff --git a/builds/win32/make_boot.bat b/builds/win32/make_boot.bat
+index 2a9db31..a21f9ef 100644
+--- a/builds/win32/make_boot.bat
++++ b/builds/win32/make_boot.bat
+@@ -29,7 +29,7 @@ for %%v in ( alice auth burp dsql gpre isql jrd misc msgs examples yvalve utilit
+ 
+ @mkdir %FB_BIN_DIR%\tzdata 2>nul
+ 
+-call :boost_config
++call :system_libs_config
+ 
+ @if not defined FBBUILD_WITHOUT_CLOOP_GENERATION call :interfaces
+ if "!ERRLEV!"=="1" goto :END
+@@ -43,8 +43,10 @@ if "!ERRLEV!"=="1" goto :END
+ if "%FB_TARGET_PLATFORM%"=="x64" call :ttmath
+ if "!ERRLEV!"=="1" goto :END
+ 
+-call :zlib
+-if "!ERRLEV!"=="1" goto :END
++@if not defined FBBUILD_WITH_SYSTEM_ZLIB (
++	call :zlib
++	if "!ERRLEV!"=="1" goto :END
++)
+ 
+ @if "%FB_CLIENT_ONLY%"=="" (
+ 	call :re2
+@@ -103,10 +105,14 @@ for %%v in (firebird plugins) do (
+ )
+ 
+ :: Copy ICU and zlib to the output directory
+-@copy %FB_ROOT_PATH%\extern\icu\icudt???.dat %FB_BIN_DIR% >nul 2>&1
+-@copy %FB_ICU_SOURCE_BIN%\*.dll %FB_BIN_DIR% >nul 2>&1
++@if not defined FBBUILD_WITH_SYSTEM_ICU (
++	@copy %FB_ROOT_PATH%\extern\icu\icudt???.dat %FB_BIN_DIR% >nul 2>&1
++	@copy %FB_ICU_SOURCE_BIN%\*.dll %FB_BIN_DIR% >nul 2>&1
++)
+ @copy %FB_ROOT_PATH%\extern\icu\tzdata-extract\* %FB_BIN_DIR%\tzdata >nul 2>&1
+-@copy %FB_ROOT_PATH%\extern\zlib\%FB_TARGET_PLATFORM%\*.dll %FB_BIN_DIR% >nul 2>&1
++@if not defined FBBUILD_WITH_SYSTEM_ZLIB (
++	@copy %FB_ROOT_PATH%\extern\zlib\%FB_TARGET_PLATFORM%\*.dll %FB_BIN_DIR% >nul 2>&1
++)
+ 
+ @if "%FB_CLIENT_ONLY%"=="" (
+ 	::=======
+@@ -132,18 +138,44 @@ for %%v in (firebird plugins) do (
+ 
+ 
+ ::===================
+-:: Record the boost headers choice in a props file used by all later builds (including the IDE)
+-:boost_config
++:: Record the system libraries choice in a props file used by all later builds (including the IDE)
++:system_libs_config
+ @mkdir %FB_TEMP_DIR% 2>nul
+-@set BOOST_PROPS=%FB_TEMP_DIR%\FirebirdSystemBoost.props
++@set SYSLIBS_PROPS=%FB_TEMP_DIR%\FirebirdSystemLibs.props
++@del "%SYSLIBS_PROPS%" 2>nul
++@set SYSLIBS_ANY=
++@if defined FBBUILD_WITH_SYSTEM_BOOST set SYSLIBS_ANY=1
++@if defined FBBUILD_WITH_SYSTEM_TOMMATH set SYSLIBS_ANY=1
++@if defined FBBUILD_WITH_SYSTEM_TOMCRYPT set SYSLIBS_ANY=1
++@if defined FBBUILD_WITH_SYSTEM_ZLIB set SYSLIBS_ANY=1
++@if defined FBBUILD_WITH_SYSTEM_ICU set SYSLIBS_ANY=1
++@if not defined SYSLIBS_ANY goto :EOF
++@echo ^<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003"^>> "%SYSLIBS_PROPS%"
++@echo   ^<PropertyGroup^>>> "%SYSLIBS_PROPS%"
+ @if defined FBBUILD_WITH_SYSTEM_BOOST (
+ 	@echo Using system boost headers
+-	@(echo ^<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003"^>
+-	  echo   ^<PropertyGroup^>^<FbBoostIncludeDir^>^</FbBoostIncludeDir^>^</PropertyGroup^>
+-	  echo ^</Project^>) > "%BOOST_PROPS%"
+-) else (
+-	@del "%BOOST_PROPS%" 2>nul
++	@echo     ^<FbBoostIncludeDir^>^</FbBoostIncludeDir^>>> "%SYSLIBS_PROPS%"
+ )
++@if defined FBBUILD_WITH_SYSTEM_TOMMATH (
++	@echo Using system libtommath
++	@echo     ^<FbTomMathIncludeDir^>^</FbTomMathIncludeDir^>>> "%SYSLIBS_PROPS%"
++	@echo     ^<FbTomMathLib^>tommath.lib^</FbTomMathLib^>>> "%SYSLIBS_PROPS%"
++)
++@if defined FBBUILD_WITH_SYSTEM_TOMCRYPT (
++	@echo Using system libtomcrypt
++	@echo     ^<FbTomCryptIncludeDir^>^</FbTomCryptIncludeDir^>>> "%SYSLIBS_PROPS%"
++	@echo     ^<FbTomCryptLib^>tomcrypt.lib^</FbTomCryptLib^>>> "%SYSLIBS_PROPS%"
++)
++@if defined FBBUILD_WITH_SYSTEM_ZLIB (
++	@echo Using system zlib
++	@echo     ^<FbZlibIncludeDir^>^</FbZlibIncludeDir^>>> "%SYSLIBS_PROPS%"
++)
++@if defined FBBUILD_WITH_SYSTEM_ICU (
++	@echo Using system ICU
++	@echo     ^<FbIcuIncludeDir^>^</FbIcuIncludeDir^>>> "%SYSLIBS_PROPS%"
++)
++@echo   ^</PropertyGroup^>>> "%SYSLIBS_PROPS%"
++@echo ^</Project^>>> "%SYSLIBS_PROPS%"
+ @goto :EOF
+ 
+ ::===================
+@@ -159,13 +191,17 @@ goto :EOF
+ :: BUILD LibTom
+ :LibTom
+ @echo.
+-@echo Building LibTomMath (%FB_OBJ_DIR%)...
+-@call compile.bat extern\libtommath\libtommath_MSVC%MSVC_VERSION% libtommath_%FB_CONFIG%_%FB_TARGET_PLATFORM%.log libtommath
+-if errorlevel 1 call :boot2 libtommath_%FB_OBJ_DIR%
++@if not defined FBBUILD_WITH_SYSTEM_TOMMATH (
++	@echo Building LibTomMath (%FB_OBJ_DIR%)...
++	@call compile.bat extern\libtommath\libtommath_MSVC%MSVC_VERSION% libtommath_%FB_CONFIG%_%FB_TARGET_PLATFORM%.log libtommath
++	if errorlevel 1 call :boot2 libtommath_%FB_OBJ_DIR%
++)
+ @if defined FBBUILD_WITHOUT_TOMCRYPT goto :LibTomDone
+-@echo Building LibTomCrypt (%FB_OBJ_DIR%)...
+-@call compile.bat extern\libtomcrypt\libtomcrypt_MSVC%MSVC_VERSION% libtomcrypt_%FB_CONFIG%_%FB_TARGET_PLATFORM%.log libtomcrypt
+-if errorlevel 1 call :boot2 libtomcrypt_%FB_OBJ_DIR%
++@if not defined FBBUILD_WITH_SYSTEM_TOMCRYPT (
++	@echo Building LibTomCrypt (%FB_OBJ_DIR%)...
++	@call compile.bat extern\libtomcrypt\libtomcrypt_MSVC%MSVC_VERSION% libtomcrypt_%FB_CONFIG%_%FB_TARGET_PLATFORM%.log libtomcrypt
++	if errorlevel 1 call :boot2 libtomcrypt_%FB_OBJ_DIR%
++)
+ :LibTomDone
+ goto :EOF
+ 
+diff --git a/builds/win32/make_icu.bat b/builds/win32/make_icu.bat
+index dd82ee1..176034b 100644
+--- a/builds/win32/make_icu.bat
++++ b/builds/win32/make_icu.bat
+@@ -22,7 +22,14 @@ if not defined FB_UNZIP (
+ 
+ if not exist "%FB_UNZIP%" set FB_UNZIP=
+ 
+-if not defined FB_UNZIP (
++if defined FBBUILD_WITH_SYSTEM_ICU (
++  @echo Using system ICU, extracting tzdata only
++  if not defined FB_UNZIP (
++    cscript /nologo unzip.vbs %FB_ROOT_PATH%\extern\icu\tzdata\le.zip %FB_ROOT_PATH%\extern\icu\tzdata-extract
++  ) else (
++    "%FB_UNZIP%" -o %FB_ROOT_PATH%\extern\icu\tzdata\le.zip -d %FB_ROOT_PATH%\extern\icu\tzdata-extract
++  )
++) else if not defined FB_UNZIP (
+   cscript /nologo unzip.vbs %FB_ROOT_PATH%\extern\icu\icu_windows.zip %FB_ROOT_PATH%\extern\icu
+   cscript /nologo unzip.vbs %FB_ROOT_PATH%\extern\icu\icudt.zip %FB_ROOT_PATH%\extern\icu
+   cscript /nologo unzip.vbs %FB_ROOT_PATH%\extern\icu\tzdata\le.zip %FB_ROOT_PATH%\extern\icu\tzdata-extract
+diff --git a/builds/win32/msvc15/FirebirdCommon.props b/builds/win32/msvc15/FirebirdCommon.props
+index b01ffeb..caa6468 100644
+--- a/builds/win32/msvc15/FirebirdCommon.props
++++ b/builds/win32/msvc15/FirebirdCommon.props
+@@ -6,14 +6,21 @@
+     <IntDir>..\..\..\temp\$(PlatformName)\$(Configuration)\$(ProjectName)\</IntDir>
+     <LinkIncremental>false</LinkIncremental>
+     <FbBoostIncludeDir>../../../extern/boost;</FbBoostIncludeDir>
++    <FbExternConfiguration>$(Configuration.Replace('Static',''))</FbExternConfiguration>
++    <FbTomMathIncludeDir>../../../extern/libtommath;</FbTomMathIncludeDir>
++    <FbTomMathLib>../../../extern/libtommath/lib/$(PlatformName)\$(FbExternConfiguration)\tommath.lib</FbTomMathLib>
++    <FbTomCryptIncludeDir>../../../extern/libtomcrypt/src/headers;</FbTomCryptIncludeDir>
++    <FbTomCryptLib>../../../extern/libtomcrypt/lib/$(PlatformName)\$(FbExternConfiguration)\tomcrypt.lib</FbTomCryptLib>
++    <FbZlibIncludeDir>../../../extern/zlib;</FbZlibIncludeDir>
++    <FbIcuIncludeDir>../../../extern/icu/include;</FbIcuIncludeDir>
+   </PropertyGroup>
+-  <!-- Generated by make_boot.bat WITH_SYSTEM_BOOST; clears FbBoostIncludeDir -->
+-  <Import Project="$(MSBuildThisFileDirectory)..\..\..\temp\$(Platform)\FirebirdSystemBoost.props" Condition="Exists('$(MSBuildThisFileDirectory)..\..\..\temp\$(Platform)\FirebirdSystemBoost.props')" />
++  <!-- Generated by make_boot.bat WITH_SYSTEM_* options; overrides the Fb*IncludeDir and Fb*Lib properties above -->
++  <Import Project="$(MSBuildThisFileDirectory)..\..\..\temp\$(Platform)\FirebirdSystemLibs.props" Condition="Exists('$(MSBuildThisFileDirectory)..\..\..\temp\$(Platform)\FirebirdSystemLibs.props')" />
+   <ItemDefinitionGroup>
+     <ClCompile>
+       <AdditionalOptions>/EHsc- %(AdditionalOptions)</AdditionalOptions>
+       <OmitFramePointers>true</OmitFramePointers>
+-      <AdditionalIncludeDirectories>../../../src/include;../../../src/include/gen;../../../extern/libtomcrypt/src/headers;../../../extern/libtommath;../../../extern/icu/include;../../../extern/zlib;../../../extern/re2;$(FbBoostIncludeDir)%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
++      <AdditionalIncludeDirectories>../../../src/include;../../../src/include/gen;$(FbTomCryptIncludeDir)$(FbTomMathIncludeDir)$(FbIcuIncludeDir)$(FbZlibIncludeDir)../../../extern/re2;$(FbBoostIncludeDir)%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+       <ExceptionHandling>
+       </ExceptionHandling>
+       <RuntimeTypeInfo>false</RuntimeTypeInfo>
+diff --git a/builds/win32/msvc15/common.vcxproj b/builds/win32/msvc15/common.vcxproj
+index a08fe86..1d1b66c 100644
+--- a/builds/win32/msvc15/common.vcxproj
++++ b/builds/win32/msvc15/common.vcxproj
+@@ -408,7 +408,7 @@
+       <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;SUPERSERVER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+     </ClCompile>
+     <Lib>
+-      <AdditionalDependencies>ws2_32.lib;../../../extern/libtommath/lib/$(PlatformName)\$(Configuration)\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\$(Configuration)\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\$(Configuration)\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies>ws2_32.lib;$(FbTomMathLib);$(FbTomCryptLib);../../../extern/decNumber/lib/$(PlatformName)\$(Configuration)\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
+     </Lib>
+   </ItemDefinitionGroup>
+   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+@@ -420,7 +420,7 @@
+       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
+     </ClCompile>
+     <Lib>
+-      <AdditionalDependencies>ws2_32.lib;../../../extern/libtommath/lib/$(PlatformName)\$(Configuration)\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\$(Configuration)\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\$(Configuration)\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies>ws2_32.lib;$(FbTomMathLib);$(FbTomCryptLib);../../../extern/decNumber/lib/$(PlatformName)\$(Configuration)\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
+     </Lib>
+   </ItemDefinitionGroup>
+   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+@@ -431,7 +431,7 @@
+       <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;SUPERSERVER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+     </ClCompile>
+     <Lib>
+-      <AdditionalDependencies>ws2_32.lib;../../../extern/libtommath/lib/$(PlatformName)\$(Configuration)\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\$(Configuration)\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\$(Configuration)\decnumber.lib;../../../extern/ttmath\$(Configuration)\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies>ws2_32.lib;$(FbTomMathLib);$(FbTomCryptLib);../../../extern/decNumber/lib/$(PlatformName)\$(Configuration)\decnumber.lib;../../../extern/ttmath\$(Configuration)\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
+     </Lib>
+   </ItemDefinitionGroup>
+   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+@@ -445,7 +445,7 @@
+       </PrecompiledHeader>
+     </ClCompile>
+     <Lib>
+-      <AdditionalDependencies>ws2_32.lib;../../../extern/libtommath/lib/$(PlatformName)\$(Configuration)\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\$(Configuration)\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\$(Configuration)\decnumber.lib;../../../extern/ttmath\$(Configuration)\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies>ws2_32.lib;$(FbTomMathLib);$(FbTomCryptLib);../../../extern/decNumber/lib/$(PlatformName)\$(Configuration)\decnumber.lib;../../../extern/ttmath\$(Configuration)\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
+     </Lib>
+   </ItemDefinitionGroup>
+   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'">
+@@ -453,8 +453,8 @@
+       <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;SUPERSERVER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+     </ClCompile>
+     <Lib>
+-      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'!='1'">../../../extern/libtommath/lib/$(PlatformName)\Release\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\Release\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
+-      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">../../../extern/libtommath/lib/$(PlatformName)\Release\tommath.lib;../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'!='1'">$(FbTomMathLib);$(FbTomCryptLib);../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">$(FbTomMathLib);../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
+     </Lib>
+   </ItemDefinitionGroup>
+   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='DebugStatic|Win32'">
+@@ -466,8 +466,8 @@
+       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
+     </ClCompile>
+     <Lib>
+-      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'!='1'">../../../extern/libtommath/lib/$(PlatformName)\Debug\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\Debug\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
+-      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">../../../extern/libtommath/lib/$(PlatformName)\Debug\tommath.lib;../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'!='1'">$(FbTomMathLib);$(FbTomCryptLib);../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">$(FbTomMathLib);../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
+     </Lib>
+   </ItemDefinitionGroup>
+   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'">
+@@ -478,8 +478,8 @@
+       <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;SUPERSERVER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+     </ClCompile>
+     <Lib>
+-      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'!='1'">../../../extern/libtommath/lib/$(PlatformName)\Release\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\Release\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;../../../extern/ttmath\Release\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
+-      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">../../../extern/libtommath/lib/$(PlatformName)\Release\tommath.lib;../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;../../../extern/ttmath\Release\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'!='1'">$(FbTomMathLib);$(FbTomCryptLib);../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;../../../extern/ttmath\Release\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">$(FbTomMathLib);../../../extern/decNumber/lib/$(PlatformName)\Release\decnumber.lib;../../../extern/ttmath\Release\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
+     </Lib>
+   </ItemDefinitionGroup>
+   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='DebugStatic|x64'">
+@@ -493,8 +493,8 @@
+       </PrecompiledHeader>
+     </ClCompile>
+     <Lib>
+-      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'!='1'">../../../extern/libtommath/lib/$(PlatformName)\Debug\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\Debug\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;../../../extern/ttmath\Debug\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
+-      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">../../../extern/libtommath/lib/$(PlatformName)\Debug\tommath.lib;../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;../../../extern/ttmath\Debug\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'!='1'">$(FbTomMathLib);$(FbTomCryptLib);../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;../../../extern/ttmath\Debug\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">$(FbTomMathLib);../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;../../../extern/ttmath\Debug\ttmathuint_x86_64_msvc.obj;%(AdditionalDependencies)</AdditionalDependencies>
+     </Lib>
+   </ItemDefinitionGroup>
+   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+diff --git a/builds/win32/msvc15/engine.vcxproj b/builds/win32/msvc15/engine.vcxproj
+index 92cc0ce..3541c41 100644
+--- a/builds/win32/msvc15/engine.vcxproj
++++ b/builds/win32/msvc15/engine.vcxproj
+@@ -185,7 +185,7 @@
+     </Midl>
+     <ClCompile>
+       <Optimization>Disabled</Optimization>
+-      <AdditionalIncludeDirectories>../../../src/include;../../../src/include/gen;../../../extern/icu/include;../../../src/vulcan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
++      <AdditionalIncludeDirectories>../../../src/include;../../../src/include/gen;$(FbIcuIncludeDir)../../../src/vulcan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_LIB;SUPERSERVER;DEV_BUILD;NAMESPACE=Vulcan;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+     </ClCompile>
+     <Link>
+@@ -221,7 +221,7 @@
+       <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+       <IntrinsicFunctions>true</IntrinsicFunctions>
+       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+-      <AdditionalIncludeDirectories>../../../src/include;../../../src/include/gen;../../../extern/icu/include;../../../src/vulcan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
++      <AdditionalIncludeDirectories>../../../src/include;../../../src/include/gen;$(FbIcuIncludeDir)../../../src/vulcan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_LIB;SUPERSERVER;NAMESPACE=Vulcan;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+       <PrecompiledHeader>
+       </PrecompiledHeader>
+diff --git a/builds/win32/msvc15/engine_static.vcxproj b/builds/win32/msvc15/engine_static.vcxproj
+index e9bdf53..968d0f3 100644
+--- a/builds/win32/msvc15/engine_static.vcxproj
++++ b/builds/win32/msvc15/engine_static.vcxproj
+@@ -493,7 +493,7 @@
+     </Midl>
+     <ClCompile>
+       <Optimization>Disabled</Optimization>
+-      <AdditionalIncludeDirectories>../../../src/include;../../../src/include/gen;../../../extern/icu/include;../../../src/vulcan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
++      <AdditionalIncludeDirectories>../../../src/include;../../../src/include/gen;$(FbIcuIncludeDir)../../../src/vulcan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_LIB;SUPERSERVER;DEV_BUILD;NAMESPACE=Vulcan;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+     </ClCompile>
+   </ItemDefinitionGroup>
+@@ -509,7 +509,7 @@
+       <TargetEnvironment>X64</TargetEnvironment>
+     </Midl>
+     <ClCompile>
+-      <AdditionalIncludeDirectories>../../../src/include;../../../src/include/gen;../../../extern/icu/include;../../../src/vulcan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
++      <AdditionalIncludeDirectories>../../../src/include;../../../src/include/gen;$(FbIcuIncludeDir)../../../src/vulcan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_LIB;SUPERSERVER;NAMESPACE=Vulcan;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+       <PrecompiledHeader>
+       </PrecompiledHeader>
+diff --git a/builds/win32/run_all.bat b/builds/win32/run_all.bat
+index f404e66..c6d1b6e 100644
+--- a/builds/win32/run_all.bat
++++ b/builds/win32/run_all.bat
+@@ -14,6 +14,10 @@ set FBBUILD_TEST_ONLY=
+ set FBBUILD_WITHOUT_TOMCRYPT=
+ set FBBUILD_WITHOUT_CLOOP_GENERATION=
+ set FBBUILD_WITH_SYSTEM_BOOST=
++set FBBUILD_WITH_SYSTEM_TOMMATH=
++set FBBUILD_WITH_SYSTEM_TOMCRYPT=
++set FBBUILD_WITH_SYSTEM_ZLIB=
++set FBBUILD_WITH_SYSTEM_ICU=
+ set FB2_SNAPSHOT=
+ 
+ ::Check if on-line help is required
+@@ -91,6 +95,18 @@ goto :END
+ @echo    WITH_SYSTEM_BOOST - use boost headers from the system include path
+ @echo                        instead of extern\boost
+ @echo.
++@echo    WITH_SYSTEM_TOMMATH - use libtommath headers and tommath.lib from the system
++@echo                          include/lib paths instead of extern\libtommath
++@echo.
++@echo    WITH_SYSTEM_TOMCRYPT - use libtomcrypt headers and tomcrypt.lib from the system
++@echo                           include/lib paths instead of extern\libtomcrypt
++@echo.
++@echo    WITH_SYSTEM_ZLIB - use zlib headers from the system include path and do not
++@echo                       distribute zlib1.dll (instead of extern\zlib)
++@echo.
++@echo    WITH_SYSTEM_ICU - use ICU headers from the system include path and do not
++@echo                      distribute ICU libraries and icudt (instead of extern\icu)
++@echo.
+ @echo    REALCLEAN - Run CLEAN_ALL.BAT REALCLEAN
+ @echo                This will do a deeper clean.
+ @echo                Recommended for multi-platform builds
+diff --git a/builds/win32/setenvvar.bat b/builds/win32/setenvvar.bat
+index 500fb35..bb27e2d 100644
+--- a/builds/win32/setenvvar.bat
++++ b/builds/win32/setenvvar.bat
+@@ -36,6 +36,26 @@ if /I "%~1"=="WITH_SYSTEM_BOOST" (
+   shift /1
+   goto :parse_args
+ )
++if /I "%~1"=="WITH_SYSTEM_TOMMATH" (
++  set FBBUILD_WITH_SYSTEM_TOMMATH=1
++  shift /1
++  goto :parse_args
++)
++if /I "%~1"=="WITH_SYSTEM_TOMCRYPT" (
++  set FBBUILD_WITH_SYSTEM_TOMCRYPT=1
++  shift /1
++  goto :parse_args
++)
++if /I "%~1"=="WITH_SYSTEM_ZLIB" (
++  set FBBUILD_WITH_SYSTEM_ZLIB=1
++  shift /1
++  goto :parse_args
++)
++if /I "%~1"=="WITH_SYSTEM_ICU" (
++  set FBBUILD_WITH_SYSTEM_ICU=1
++  shift /1
++  goto :parse_args
++)
+ if /I "%~1"=="WITHOUT_TOMCRYPT" (
+   set FBBUILD_WITHOUT_TOMCRYPT=1
+   shift /1
+@@ -300,6 +320,10 @@ goto :END
+ @echo    platform=%FB_TARGET_PLATFORM%
+ @if defined FBBUILD_WITHOUT_CLOOP_GENERATION echo    without_cloop_generation=yes
+ @if defined FBBUILD_WITH_SYSTEM_BOOST echo    with_system_boost=yes
++@if defined FBBUILD_WITH_SYSTEM_TOMMATH echo    with_system_tommath=yes
++@if defined FBBUILD_WITH_SYSTEM_TOMCRYPT echo    with_system_tomcrypt=yes
++@if defined FBBUILD_WITH_SYSTEM_ZLIB echo    with_system_zlib=yes
++@if defined FBBUILD_WITH_SYSTEM_ICU echo    with_system_icu=yes
+ @if /I "%FB_CLIENT_ONLY%"=="STATIC" (
+   @echo    fbclient_static_config=%FB_STATIC_CONFIG%
+   @if defined FBBUILD_WITHOUT_TOMCRYPT echo    without_tomcrypt=yes
+diff --git a/doc/README.build.msvc.html b/doc/README.build.msvc.html
+index 93c686f..27ea3d0 100644
+--- a/doc/README.build.msvc.html
++++ b/doc/README.build.msvc.html
+@@ -109,7 +109,8 @@ with the default options (next, next, next)</li>
+ <li>make_all.bat [DEBUG] [CLEAN]</li>
+ </ol>
+ <li>To skip the Cloop build and generated interface updates, pass <code>WITHOUT_CLOOP_GENERATION</code> to <code>run_all.bat</code>.</li>
+-<li>To use boost headers from the system include path (e.g. the <code>INCLUDE</code> environment variable) instead of <code>extern\boost</code>, pass <code>WITH_SYSTEM_BOOST</code> to <code>make_boot.bat</code> (or <code>run_all.bat</code>). The choice is recorded in <code>temp\&lt;Platform&gt;\FirebirdSystemBoost.props</code> and used by later builds, including from the IDE; a <code>make_boot.bat</code> run without the option removes it, and so does <code>clean_all.bat</code>. The installed <code>Message.h</code> then uses <code>&lt;boost/...&gt;</code> and the embedded boost copy is not distributed.</li>
++<li>To use boost headers from the system include path (e.g. the <code>INCLUDE</code> environment variable) instead of <code>extern\boost</code>, pass <code>WITH_SYSTEM_BOOST</code> to <code>make_boot.bat</code> (or <code>run_all.bat</code>). The choice is recorded in <code>temp\&lt;Platform&gt;\FirebirdSystemLibs.props</code> and used by later builds, including from the IDE; a <code>make_boot.bat</code> run without the option removes it, and so does <code>clean_all.bat</code>. The installed <code>Message.h</code> then uses <code>&lt;boost/...&gt;</code> and the embedded boost copy is not distributed.</li>
++<li>Likewise, <code>WITH_SYSTEM_TOMMATH</code>, <code>WITH_SYSTEM_TOMCRYPT</code>, <code>WITH_SYSTEM_ZLIB</code> and <code>WITH_SYSTEM_ICU</code> make the build use the headers (and, for libtommath and libtomcrypt, <code>tommath.lib</code> and <code>tomcrypt.lib</code>) from the system <code>INCLUDE</code> and <code>LIB</code> paths instead of <code>extern\libtommath</code>, <code>extern\libtomcrypt</code>, <code>extern\zlib</code> and <code>extern\icu</code>. The embedded copy is not built or extracted, and the corresponding runtime files (<code>zlib1.dll</code>, ICU libraries and icudt; tzdata is still extracted and copied) are not copied to the output directory, so they must be provided by you. These options are also recorded in <code>FirebirdSystemLibs.props</code>.</li>
+ </ol>
+ <ul>
+ <p>After the build finish, an output directory with the binaries is created below your firebird directory.</p>

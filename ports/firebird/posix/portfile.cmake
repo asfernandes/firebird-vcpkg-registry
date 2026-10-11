@@ -16,6 +16,7 @@ set(FIREBIRD_CONFIGURE_OPTIONS
     --enable-binreloc
     --without-cloop-generation
     --with-system-boost
+    --with-system-re2
     --with-termlib=:libncurses.a
     --with-atomiclib=:libatomic.a
     --with-fbplugins=plugins/${PORT}

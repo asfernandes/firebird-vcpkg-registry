@@ -18,7 +18,18 @@ vcpkg_from_github(
         without-cloop-generation.patch
         system-boost-posix.patch
         system-boost-windows.patch
+        system-libs-windows.patch
 )
+
+# Only decNumber, ttmath and ICU's tzdata are used from the bundled third-party sources.
+file(GLOB FIREBIRD_EXTERN_DIRS LIST_DIRECTORIES true "${SOURCE_PATH}/extern/*" "${SOURCE_PATH}/extern/icu/*")
+list(REMOVE_ITEM FIREBIRD_EXTERN_DIRS
+    "${SOURCE_PATH}/extern/decNumber"
+    "${SOURCE_PATH}/extern/ttmath"
+    "${SOURCE_PATH}/extern/icu"
+    "${SOURCE_PATH}/extern/icu/tzdata"
+)
+file(REMOVE_RECURSE ${FIREBIRD_EXTERN_DIRS})
 
 if(VCPKG_TARGET_IS_WINDOWS)
     include("${CMAKE_CURRENT_LIST_DIR}/windows/portfile.cmake")
