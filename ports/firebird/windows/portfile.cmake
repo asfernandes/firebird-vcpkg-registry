@@ -36,6 +36,9 @@ file(TO_NATIVE_PATH "${CURRENT_INSTALLED_DIR}/lib" FB_VCPKG_LIB_DIR)
 file(TO_NATIVE_PATH "${CURRENT_INSTALLED_DIR}/debug/lib" FB_VCPKG_DEBUG_LIB_DIR)
 set(FB_ORIGINAL_LIB "$ENV{LIB}")
 
+# MSBuild ignores INCLUDE and LIB unless UseEnv is true (read as a property from the environment).
+set(ENV{UseEnv} true)
+
 if(NOT "chacha" IN_LIST FEATURES)
     list(APPEND FB_BUILD_ARGS WITHOUT_TOMCRYPT)
 endif()
