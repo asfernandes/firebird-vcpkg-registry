@@ -4,8 +4,8 @@ vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     # FIXME:
     REPO asfernandes/firebird
-    REF work/win-arm64
-    SHA512 a8c6e4ff3974b6c6cffb02d03f2eff59114f2b5b49b7b93d23b3182134b61b258becb3f75fc71da2ea9e52f4043830766c37715b22be8d70938c7284fd0a1977
+    REF 092afce9b2ad9ebf4aaa29164eed2ffa97f83032
+    SHA512 4ed303a9a71910f1c8d9511f6251ac22047ff52fb9cba0e45639b5842811b4cd654b55f5f8f54556b4dc90dac20cddfdc6792f4fc56439cb27575898d74053f4
     HEAD_REF master
     PATCHES
         static-build.patch

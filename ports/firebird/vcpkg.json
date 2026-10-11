@@ -12,10 +12,6 @@
       "host": true,
       "default-features": false
     },
-    {
-      "name": "libtomcrypt",
-      "platform": "windows & !static"
-    },
     "libtommath",
     {
       "name": "ncurses",
@@ -35,6 +31,7 @@
   "features": {
     "chacha": {
       "description": "Build the ChaCha wire encryption plugin",
+      "supports": "!(windows & arm64)",
       "dependencies": [
         "libtomcrypt"
       ]

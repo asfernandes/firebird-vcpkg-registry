@@ -1046,13 +1046,15 @@ index 0000000..d4d01ae
 +set /a RenameCount+=1
 +goto :eof
 diff --git a/builds/win32/make_all.bat b/builds/win32/make_all.bat
-index b202480..5c43b6f 100644
+index 0e0e9b6..a083a09 100644
 --- a/builds/win32/make_all.bat
 +++ b/builds/win32/make_all.bat
-@@ -18,10 +18,21 @@ set ERRLEV=0
+@@ -18,12 +18,24 @@ set ERRLEV=0
  
  @if "%FB_CLIENT_ONLY%"=="" (
  	call compile.bat builds\win32\%VS_VER%\Firebird make_all_%FB_TARGET_PLATFORM%.log
+-) else if defined FBBUILD_WITHOUT_TOMCRYPT (
+-	call compile.bat builds\win32\%VS_VER%\Firebird make_all_%FB_TARGET_PLATFORM%.log DLLs\yvalve
 +	if errorlevel 1 call :ERROR build failed - see make_all_%FB_TARGET_PLATFORM%.log for details
  ) else (
 -	call compile.bat builds\win32\%VS_VER%\Firebird make_all_%FB_TARGET_PLATFORM%.log DLLs\yvalve DLLs\chacha
@@ -1064,6 +1066,9 @@ index b202480..5c43b6f 100644
 +			call "%FB_ROOT_PATH%\builds\win32\fix_fbclient_static.bat" "%FB_ROOT_PATH%\temp\%FB_STATIC_OBJ_DIR%\yvalve\fbclient_static.lib"
 +			if errorlevel 1 call :ERROR fix_fbclient_static.bat failed
 +		)
++	) else if defined FBBUILD_WITHOUT_TOMCRYPT (
++		call compile.bat builds\win32\%VS_VER%\Firebird make_all_%FB_TARGET_PLATFORM%.log DLLs\yvalve
++		if errorlevel 1 call :ERROR build failed - see make_all_%FB_TARGET_PLATFORM%.log for details
 +	) else (
 +		call compile.bat builds\win32\%VS_VER%\Firebird make_all_%FB_TARGET_PLATFORM%.log DLLs\yvalve DLLs\chacha
 +		if errorlevel 1 call :ERROR build failed - see make_all_%FB_TARGET_PLATFORM%.log for details
@@ -1073,7 +1078,7 @@ index b202480..5c43b6f 100644
  
  @if "%ERRLEV%"=="1" (
    @goto :EOF
-@@ -60,6 +71,10 @@ if errorlevel 1 call :ERROR build failed - see make_all_%FB_TARGET_PLATFORM%.log
+@@ -62,6 +74,10 @@ if errorlevel 1 call :ERROR build failed - see make_all_%FB_TARGET_PLATFORM%.log
  @copy %FB_ROOT_PATH%\temp\%FB_OBJ_DIR%\firebird\plugins\*.dll %FB_OUTPUT_DIR%\plugins >nul
  @copy %FB_ROOT_PATH%\temp\%FB_OBJ_DIR%\yvalve\fbclient.lib %FB_OUTPUT_DIR%\lib\fbclient_ms.lib >nul
  
@@ -1084,19 +1089,6 @@ index b202480..5c43b6f 100644
  @if "%FB_CLIENT_ONLY%"=="" (
  	copy %FB_ROOT_PATH%\temp\%FB_OBJ_DIR%\firebird\intl\* %FB_OUTPUT_DIR%\intl >nul
  	copy %FB_ROOT_PATH%\temp\%FB_OBJ_DIR%\firebird\plugins\udr\*.dll %FB_OUTPUT_DIR%\plugins\udr >nul
-diff --git a/builds/win32/make_boot.bat b/builds/win32/make_boot.bat
-index fa06abf..c9ea998 100644
---- a/builds/win32/make_boot.bat
-+++ b/builds/win32/make_boot.bat
-@@ -224,7 +224,7 @@ goto :EOF
- 	@call compile.bat extern\libtommath\libtommath_MSVC%MSVC_VERSION% libtommath_%FB_CONFIG%_%FB_TARGET_PLATFORM%.log libtommath
- 	if errorlevel 1 call :boot2 libtommath_%FB_OBJ_DIR%
- )
--@if not defined FBBUILD_WITH_SYSTEM_TOMCRYPT (
-+@if not defined FBBUILD_WITH_SYSTEM_TOMCRYPT if not defined FBBUILD_WITHOUT_TOMCRYPT (
- 	@echo Building LibTomCrypt ^(%FB_OBJ_DIR%^)...
- 	@call compile.bat extern\libtomcrypt\libtomcrypt_MSVC%MSVC_VERSION% libtomcrypt_%FB_CONFIG%_%FB_TARGET_PLATFORM%.log libtomcrypt
- 	if errorlevel 1 call :boot2 libtomcrypt_%FB_OBJ_DIR%
 diff --git a/builds/win32/msvc15/Firebird.sln b/builds/win32/msvc15/Firebird.sln
 index df3b593..64eb828 100644
 --- a/builds/win32/msvc15/Firebird.sln
@@ -1854,7 +1846,7 @@ index 0000000..01befa3
 +  </ItemDefinitionGroup>
 +</Project>
 diff --git a/builds/win32/msvc15/common.vcxproj b/builds/win32/msvc15/common.vcxproj
-index 51931bc..3269ac6 100644
+index 915f237..f8679eb 100644
 --- a/builds/win32/msvc15/common.vcxproj
 +++ b/builds/win32/msvc15/common.vcxproj
 @@ -13,6 +13,18 @@
@@ -1902,7 +1894,7 @@ index 51931bc..3269ac6 100644
 +    <ClCompile Include="..\..\..\src\common\classes\ThreadCleanup.cpp" />
      <ClCompile Include="..\..\..\src\common\classes\TimerImpl.cpp" />
      <ClCompile Include="..\..\..\src\common\classes\timestamp.cpp" />
-     <ClCompile Include="..\..\..\src\common\classes\TomCryptHash.cpp" />
+     <ClCompile Include="..\..\..\src\common\classes\TomCryptHash.cpp" Condition="'$(FbWithoutTomCrypt)'!='true'" />
 @@ -165,6 +190,7 @@
      <ClInclude Include="..\..\..\src\common\classes\Synchronize.h" />
      <ClInclude Include="..\..\..\src\common\classes\SyncObject.h" />
@@ -2168,23 +2160,10 @@ index 51931bc..3269ac6 100644
    <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|arm64'">
      <Midl>
        <TargetEnvironment>ARM64</TargetEnvironment>
-@@ -410,7 +593,7 @@
-       <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;SUPERSERVER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-     </ClCompile>
-     <Lib>
--      <AdditionalDependencies>ws2_32.lib;../../../extern/libtommath/lib/$(PlatformName)\$(Configuration)\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\$(Configuration)\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\$(Configuration)\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
-+      <AdditionalDependencies>ws2_32.lib;$(FbTomMathLib);$(FbTomCryptLib);../../../extern/decNumber/lib/$(PlatformName)\$(Configuration)\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
+@@ -427,6 +610,33 @@
+       <AdditionalDependencies>ws2_32.lib;$(FbTomMathLib);$(FbTomCryptLib);../../../extern/decNumber/lib/$(PlatformName)\$(Configuration)\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
      </Lib>
    </ItemDefinitionGroup>
-   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|arm64'">
-@@ -424,7 +607,34 @@
-       </PrecompiledHeader>
-     </ClCompile>
-     <Lib>
--      <AdditionalDependencies>ws2_32.lib;../../../extern/libtommath/lib/$(PlatformName)\$(Configuration)\tommath.lib;../../../extern/libtomcrypt/lib/$(PlatformName)\$(Configuration)\tomcrypt.lib;../../../extern/decNumber/lib/$(PlatformName)\$(Configuration)\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
-+      <AdditionalDependencies>ws2_32.lib;$(FbTomMathLib);$(FbTomCryptLib);../../../extern/decNumber/lib/$(PlatformName)\$(Configuration)\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
-+    </Lib>
-+  </ItemDefinitionGroup>
 +  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|arm64'">
 +    <Midl>
 +      <TargetEnvironment>ARM64</TargetEnvironment>
@@ -2210,9 +2189,11 @@ index 51931bc..3269ac6 100644
 +    <Lib>
 +      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'!='1'">$(FbTomMathLib);$(FbTomCryptLib);../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
 +      <AdditionalDependencies Condition="'$(FBBUILD_WITHOUT_TOMCRYPT)'=='1'">$(FbTomMathLib);../../../extern/decNumber/lib/$(PlatformName)\Debug\decnumber.lib;%(AdditionalDependencies)</AdditionalDependencies>
-     </Lib>
-   </ItemDefinitionGroup>
++    </Lib>
++  </ItemDefinitionGroup>
    <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+   <ImportGroup Label="ExtensionTargets">
+   </ImportGroup>
 diff --git a/builds/win32/msvc15/common.vcxproj.filters b/builds/win32/msvc15/common.vcxproj.filters
 index eb80abd..904a547 100644
 --- a/builds/win32/msvc15/common.vcxproj.filters
@@ -2629,32 +2610,11 @@ index 09ca441..77c729c 100644
      <ClInclude Include="..\..\..\src\remote\client\BlrFromMessage.h">
        <Filter>headers</Filter>
      </ClInclude>
-diff --git a/builds/win32/run_all.bat b/builds/win32/run_all.bat
-index e2660a9..1481d33 100644
---- a/builds/win32/run_all.bat
-+++ b/builds/win32/run_all.bat
-@@ -17,6 +17,7 @@ set FBBUILD_WITH_SYSTEM_TOMMATH=
- set FBBUILD_WITH_SYSTEM_TOMCRYPT=
- set FBBUILD_WITH_SYSTEM_ZLIB=
- set FBBUILD_WITH_SYSTEM_ICU=
-+set FBBUILD_WITHOUT_TOMCRYPT=
- set FB2_SNAPSHOT=
- 
- ::Check if on-line help is required
-@@ -104,6 +105,8 @@ goto :END
- @echo    WITH_SYSTEM_ICU - use ICU headers from the system include path and do not
- @echo                      distribute ICU libraries and icudt (instead of extern\icu)
- @echo.
-+@echo    WITHOUT_TOMCRYPT - omit TomCrypt and ChaCha from CLIENT_ONLY=STATIC builds
-+@echo.
- @echo    REALCLEAN - Run CLEAN_ALL.BAT REALCLEAN
- @echo                This will do a deeper clean.
- @echo                Recommended for multi-platform builds
 diff --git a/builds/win32/setenvvar.bat b/builds/win32/setenvvar.bat
-index 6246114..422b6c0 100644
+index cff7cc3..2e7df21 100644
 --- a/builds/win32/setenvvar.bat
 +++ b/builds/win32/setenvvar.bat
-@@ -11,19 +11,117 @@
+@@ -11,21 +11,116 @@
  
  set FB_CLEAN=
  
@@ -2664,6 +2624,7 @@ index 6246114..422b6c0 100644
 -  ( if /I "%%v"=="WITH_SYSTEM_BOOST" (set FBBUILD_WITH_SYSTEM_BOOST=1) )
 -  ( if /I "%%v"=="WITH_SYSTEM_TOMMATH" (set FBBUILD_WITH_SYSTEM_TOMMATH=1) )
 -  ( if /I "%%v"=="WITH_SYSTEM_TOMCRYPT" (set FBBUILD_WITH_SYSTEM_TOMCRYPT=1) )
+-  ( if /I "%%v"=="WITHOUT_TOMCRYPT" (set FBBUILD_WITHOUT_TOMCRYPT=1) )
 -  ( if /I "%%v"=="WITH_SYSTEM_ZLIB" (set FBBUILD_WITH_SYSTEM_ZLIB=1) )
 -  ( if /I "%%v"=="WITH_SYSTEM_ICU" (set FBBUILD_WITH_SYSTEM_ICU=1) )
 -  ( if /I "%%v"=="CLEAN" (set FB_CLEAN=:rebuild) )
@@ -2684,7 +2645,7 @@ index 6246114..422b6c0 100644
 +  set FB_CONFIG=debug
 +  shift /1
 +  goto :parse_args
- )
++)
 +if /I "%~1"=="WITHOUT_CLOOP_GENERATION" (
 +  set FBBUILD_WITHOUT_CLOOP_GENERATION=1
 +  shift /1
@@ -2730,8 +2691,8 @@ index 6246114..422b6c0 100644
 +  set FB_CONFIG=release
 +  shift /1
 +  goto :parse_args
-+)
-+
+ )
+ 
 +:: Quoted form: "CLIENT_ONLY=STATIC" (or DLL / FALSE)
 +if /I "%~1"=="CLIENT_ONLY=STATIC" (
 +  set FB_CLIENT_ONLY=STATIC
@@ -2780,11 +2741,10 @@ index 6246114..422b6c0 100644
 +
 +:parse_args_done
 +
-+@if /I not "%FB_CLIENT_ONLY%"=="STATIC" set FBBUILD_WITHOUT_TOMCRYPT=
- 
- @if not defined FB_CONFIG (
-   set FB_DBG=
-@@ -175,6 +273,17 @@ rem NOTE 2 This code is likely to break again in the future !!!!
+ @if defined FBBUILD_WITHOUT_TOMCRYPT if not defined FB_CLIENT_ONLY (
+   echo WITHOUT_TOMCRYPT is allowed only with CLIENT_ONLY
+   set ERRLEV=1
+@@ -182,6 +277,17 @@ rem NOTE 2 This code is likely to break again in the future !!!!
  @set FIREBIRD_BOOT_BUILD=1
  
  @set FB_OBJ_DIR=%FB_TARGET_PLATFORM%\%FB_CONFIG%
@@ -2802,13 +2762,12 @@ index 6246114..422b6c0 100644
  @set FB_BIN_DIR=%FB_ROOT_PATH%\temp\%FB_OBJ_DIR%\firebird
  
  
-@@ -216,6 +325,10 @@ goto :END
- @if defined FBBUILD_WITH_SYSTEM_TOMCRYPT echo    with_system_tomcrypt=yes
+@@ -224,6 +330,9 @@ goto :END
+ @if defined FBBUILD_WITHOUT_TOMCRYPT echo    without_tomcrypt=yes
  @if defined FBBUILD_WITH_SYSTEM_ZLIB echo    with_system_zlib=yes
  @if defined FBBUILD_WITH_SYSTEM_ICU echo    with_system_icu=yes
 +@if /I "%FB_CLIENT_ONLY%"=="STATIC" (
 +  @echo    fbclient_static_config=%FB_STATIC_CONFIG%
-+  @if defined FBBUILD_WITHOUT_TOMCRYPT echo    without_tomcrypt=yes
 +)
  @echo    msvc_version=%MSVC_VERSION%
  @echo    db_path=%FB_DB_PATH%
