@@ -74,10 +74,12 @@ jobs:
             linkage: static
             triplet: arm64-windows-static-md
             architecture: arm64
+            unsupported-features: chacha
           - os: windows-11-arm
             linkage: dynamic
             triplet: arm64-windows
             architecture: arm64
+            unsupported-features: chacha
     env:
       PORT: ${{ inputs.port }}
       VERSION: ${{ inputs.version }}
@@ -92,8 +94,34 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
 
+      - name: Check feature support
+        shell: bash
+        env:
+          UNSUPPORTED_FEATURES: ${{ matrix.unsupported-features }}
+        run: |
+          set -euo pipefail
+
+          skipped=""
+          if [[ "$PORT" == "firebird" && -n "$FEATURES" && -n "$UNSUPPORTED_FEATURES" ]]; then
+            IFS=',' read -ra requested <<< "$FEATURES"
+            for feature in "${requested[@]}"; do
+              feature="$(echo "$feature" | xargs)"
+              for unsupported in $UNSUPPORTED_FEATURES; do
+                if [[ "$feature" == "$unsupported" ]]; then
+                  skipped="$skipped $feature"
+                fi
+              done
+            done
+          fi
+
+          if [[ -n "$skipped" ]]; then
+            echo "SKIP_BUILD=true" >> "$GITHUB_ENV"
+            echo "::notice::Skipping $PORT on $VCPKG_TRIPLET: unsupported feature(s):$skipped"
+            echo "### Skipped: $PORT feature(s)$skipped not supported on $VCPKG_TRIPLET" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Use preinstalled vcpkg
-        if: runner.os != 'Windows'
+        if: runner.os != 'Windows' && env.SKIP_BUILD != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -106,7 +134,7 @@ jobs:
           echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
 
       - name: Use preinstalled vcpkg
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && env.SKIP_BUILD != 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -118,7 +146,7 @@ jobs:
           Add-Content -LiteralPath $env:GITHUB_ENV -Value "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT"
 
       - name: Prepare manifest and branch overlay
-        if: runner.os != 'Windows'
+        if: runner.os != 'Windows' && env.SKIP_BUILD != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -215,7 +243,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Prepare manifest and branch overlay
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && env.SKIP_BUILD != 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -326,18 +354,18 @@ jobs:
           Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- Triplet: $($env:VCPKG_TRIPLET)"
 
       - name: Install prerequisites
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && env.SKIP_BUILD != 'true'
         shell: bash
         run: |
           sudo apt-get -y -o Dpkg::Progress-Fancy=0 install autoconf autoconf-archive automake libtool libtool-bin
 
       - name: Install prerequisites
-        if: runner.os == 'MacOS'
+        if: runner.os == 'MacOS' && env.SKIP_BUILD != 'true'
         run: |
           brew install --quiet autoconf autoconf-archive automake libtool
 
       - name: Build selected example
-        if: runner.os != 'Windows'
+        if: runner.os != 'Windows' && env.SKIP_BUILD != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -350,7 +378,7 @@ jobs:
           cmake --build "$build_root" --config Release --parallel
 
       - name: Build selected example
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && env.SKIP_BUILD != 'true'
         shell: cmd
         run: |
           @echo off
