@@ -1,0 +1,43 @@
+diff --git a/src/common/BigInteger.cpp b/src/common/BigInteger.cpp
+index 45e6c3a..b939b48 100644
+--- a/src/common/BigInteger.cpp
++++ b/src/common/BigInteger.cpp
+@@ -102,7 +102,7 @@ namespace Firebird
+ 
+ 	void BigInteger::assign(unsigned int count, const unsigned char* bytes)
+ 	{
+-		CHECK_MP(mp_read_unsigned_bin(&t, bytes, count));
++		CHECK_MP(mp_from_ubin(&t, bytes, count));
+ 	}
+ 
+ 	BigInteger BigInteger::operator+ (const BigInteger& val) const
+@@ -177,17 +177,13 @@ namespace Firebird
+ 
+ 	void BigInteger::getBytes(Firebird::UCharBuffer& bytes) const
+ 	{
+-		CHECK_MP(mp_to_unsigned_bin(const_cast<mp_int*>(&t), bytes.getBuffer(length())));
++		const unsigned int len = length();
++		CHECK_MP(mp_to_ubin(&t, bytes.getBuffer(len), len, NULL));
+ 	}
+ 
+ 	unsigned int BigInteger::length() const
+ 	{
+-		int rc = mp_unsigned_bin_size(const_cast<mp_int*>(&t));
+-		if (rc < 0)
+-		{
+-			check(rc, "mp_unsigned_bin_size(&t)");
+-		}
+-		return static_cast<unsigned int>(rc);
++		return static_cast<unsigned int>(mp_ubin_size(&t));
+ 	}
+ 
+ 	void BigInteger::getText(string& str, unsigned int radix) const
+@@ -195,7 +191,7 @@ namespace Firebird
+ 		int size;
+ 		CHECK_MP(mp_radix_size(const_cast<mp_int*>(&t), radix, &size));
+ 		str.resize(size - 1, ' ');
+-		CHECK_MP(mp_toradix(const_cast<mp_int*>(&t), str.begin(), radix));
++		CHECK_MP(mp_to_radix(&t, str.begin(), size, NULL, radix));
+ 	}
+ 
+ 	BigInteger BigInteger::modPow(const BigInteger& pow, const BigInteger& mod) const
