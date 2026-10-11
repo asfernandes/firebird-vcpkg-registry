@@ -12,7 +12,7 @@ index 9d7553c..d3ecfeb 100644
  	powershell -NoProfile -Command "(Get-Content '%FB_ROOT_PATH%\src\include\firebird\Message.h') -replace '^#include \"\./impl/boost/(.+)\"', '#include <boost/$1>' -replace '\bFB_BOOST_PP_', 'BOOST_PP_' | Set-Content -Encoding ascii '%FB_OUTPUT_DIR%\include\firebird\Message.h'"
  )
 diff --git a/builds/win32/make_boot.bat b/builds/win32/make_boot.bat
-index 2a9db31..a21f9ef 100644
+index 2a9db31..88c2cb2 100644
 --- a/builds/win32/make_boot.bat
 +++ b/builds/win32/make_boot.bat
 @@ -29,7 +29,7 @@ for %%v in ( alice auth burp dsql gpre isql jrd misc msgs examples yvalve utilit
@@ -116,7 +116,7 @@ index 2a9db31..a21f9ef 100644
 -@call compile.bat extern\libtommath\libtommath_MSVC%MSVC_VERSION% libtommath_%FB_CONFIG%_%FB_TARGET_PLATFORM%.log libtommath
 -if errorlevel 1 call :boot2 libtommath_%FB_OBJ_DIR%
 +@if not defined FBBUILD_WITH_SYSTEM_TOMMATH (
-+	@echo Building LibTomMath (%FB_OBJ_DIR%)...
++	@echo Building LibTomMath ^(%FB_OBJ_DIR%^)...
 +	@call compile.bat extern\libtommath\libtommath_MSVC%MSVC_VERSION% libtommath_%FB_CONFIG%_%FB_TARGET_PLATFORM%.log libtommath
 +	if errorlevel 1 call :boot2 libtommath_%FB_OBJ_DIR%
 +)
@@ -125,7 +125,7 @@ index 2a9db31..a21f9ef 100644
 -@call compile.bat extern\libtomcrypt\libtomcrypt_MSVC%MSVC_VERSION% libtomcrypt_%FB_CONFIG%_%FB_TARGET_PLATFORM%.log libtomcrypt
 -if errorlevel 1 call :boot2 libtomcrypt_%FB_OBJ_DIR%
 +@if not defined FBBUILD_WITH_SYSTEM_TOMCRYPT (
-+	@echo Building LibTomCrypt (%FB_OBJ_DIR%)...
++	@echo Building LibTomCrypt ^(%FB_OBJ_DIR%^)...
 +	@call compile.bat extern\libtomcrypt\libtomcrypt_MSVC%MSVC_VERSION% libtomcrypt_%FB_CONFIG%_%FB_TARGET_PLATFORM%.log libtomcrypt
 +	if errorlevel 1 call :boot2 libtomcrypt_%FB_OBJ_DIR%
 +)
