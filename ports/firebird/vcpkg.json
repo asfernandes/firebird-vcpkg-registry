@@ -4,7 +4,7 @@
   "description": "Firebird SQL DBMS client library",
   "homepage": "https://firebirdsql.org/",
   "license": "LicenseRef-IDPL OR LicenseRef-IPL",
-  "supports": "(windows & !uwp & !arm) | linux | osx",
+  "supports": "(windows & !uwp & !arm32) | linux | osx",
   "dependencies": [
     "boost-preprocessor",
     {

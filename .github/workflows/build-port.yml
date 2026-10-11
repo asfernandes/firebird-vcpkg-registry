@@ -70,14 +70,14 @@ jobs:
             linkage: dynamic
             triplet: x64-windows
             architecture: x64
-          #- os: windows-11-arm
-          #  linkage: static
-          #  triplet: arm64-windows-static
-          #  architecture: arm64
-          #- os: windows-11-arm
-          #  linkage: dynamic
-          #  triplet: arm64-windows
-          #  architecture: arm64
+          - os: windows-11-arm
+            linkage: static
+            triplet: arm64-windows-static-md
+            architecture: arm64
+          - os: windows-11-arm
+            linkage: dynamic
+            triplet: arm64-windows
+            architecture: arm64
     env:
       PORT: ${{ inputs.port }}
       VERSION: ${{ inputs.version }}
@@ -367,6 +367,7 @@ jobs:
           set "VC_COMPONENT=Microsoft.VisualStudio.Component.VC.Tools.x86.x64"
           if /i "%VCPKG_ARCHITECTURE%"=="arm64" (
             set "VS_ARCH=arm64"
+            set "VS_HOST_ARCH=arm64"
             set "CMAKE_ARCH=ARM64"
             set "VC_COMPONENT=Microsoft.VisualStudio.Component.VC.Tools.ARM64"
           )
